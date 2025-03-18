@@ -27,7 +27,7 @@ class _MainScreenState extends State<MainScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _screens[_selectedIndex], // Display the selected screen
+      body: _screens[_selectedIndex],
       bottomNavigationBar: Container(
         height: 115,
         decoration: const BoxDecoration(
