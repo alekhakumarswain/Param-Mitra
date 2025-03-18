@@ -171,7 +171,7 @@ class _ChatWidgetState extends State<ChatWidget> {
         "Welcome, Liza! Main hoon Suusri, tera Param Mitra. Bol na, kya help chahiye? Main teri safety ke liye hamesha ready hoon! ...";
     _addMessage(welcomeText, false);
     _speakText(
-        "स्वागत है, Liza! मैं हूँ सूसरी, तेरा परम मित्र। बोल ना, क्या मदद चाहिए? मैं तेरी सेफ्टी के लिए हमेशा तैयार हूँ! ...");
+        "स्वागत है, $userName! मैं हूँ सूसरी, तेरा परम मित्र। बोल ना, क्या मदद चाहिए? मैं तेरी सेफ्टी के लिए हमेशा तैयार हूँ! ...");
   }
 
   void _scrollDown() {

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'views/splash_screen.dart';
 import 'views/onboarding_screen.dart';
 import 'views/signup_login_screen.dart';
-import 'views/pages/main_screen.dart'; // Renamed from Navbar to MainScreen for clarity
+import 'views/widgets/Mainscreen.dart';
 
 void main() {
   runApp(const ParamMitraApp());

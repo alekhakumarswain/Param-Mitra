@@ -29,7 +29,7 @@ class _MainScreenState extends State<MainScreen> {
     return Scaffold(
       body: _screens[_selectedIndex], // Display the selected screen
       bottomNavigationBar: Container(
-        height: 180,
+        height: 115,
         decoration: const BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.only(
@@ -57,7 +57,7 @@ class _MainScreenState extends State<MainScreen> {
             showUnselectedLabels: true,
             selectedLabelStyle: const TextStyle(
               fontWeight: FontWeight.bold,
-              fontSize: 13,
+              fontSize: 14,
             ),
             unselectedLabelStyle: const TextStyle(
               fontSize: 13,
