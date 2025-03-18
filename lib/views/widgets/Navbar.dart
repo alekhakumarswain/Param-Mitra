@@ -28,7 +28,7 @@ class _NavbarState extends State<Navbar> {
   Widget build(BuildContext context) {
     return Scaffold(
       bottomNavigationBar: Container(
-        height: 100,
+        height: 180,
         decoration: const BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.only(
