@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_database/firebase_database.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:geolocator/geolocator.dart';
 
 class SignupLoginScreen extends StatefulWidget {
   const SignupLoginScreen({super.key});
@@ -15,8 +18,8 @@ class _SignupLoginScreenState extends State<SignupLoginScreen> {
   String _loginPassword = "";
   bool _isLogin = true;
 
-  // State variables for signup (mark _phoneOtp as final since unused)
-  final String _phoneOtp = ""; // Unused, marked as final
+  // State variables for signup
+  final String _phoneOtp = "";
   String _signupName = "";
   String _signupNumber = "";
   String _signupEmail = "";
@@ -26,6 +29,7 @@ class _SignupLoginScreenState extends State<SignupLoginScreen> {
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final DatabaseReference _database = FirebaseDatabase.instance.ref();
 
   @override
   Widget build(BuildContext context) {
@@ -112,8 +116,7 @@ class _SignupLoginScreenState extends State<SignupLoginScreen> {
             hintText: 'e.g., example@domain.com or +91-1234567890',
             hintStyle: const TextStyle(color: Colors.white54),
             filled: true,
-            fillColor: Colors.white
-                .withAlpha(51), // Replace withOpacity with withAlpha
+            fillColor: Colors.white.withAlpha(51),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
           ),
           style: const TextStyle(color: Colors.white),
@@ -125,8 +128,7 @@ class _SignupLoginScreenState extends State<SignupLoginScreen> {
             labelText: 'Password',
             labelStyle: const TextStyle(color: Colors.white70),
             filled: true,
-            fillColor: Colors.white
-                .withAlpha(51), // Replace withOpacity with withAlpha
+            fillColor: Colors.white.withAlpha(51),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
           ),
           obscureText: true,
@@ -160,8 +162,7 @@ class _SignupLoginScreenState extends State<SignupLoginScreen> {
             labelText: 'Name',
             labelStyle: const TextStyle(color: Colors.white70),
             filled: true,
-            fillColor: Colors.white
-                .withAlpha(51), // Replace withOpacity with withAlpha
+            fillColor: Colors.white.withAlpha(51),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
           ),
           style: const TextStyle(color: Colors.white),
@@ -175,8 +176,7 @@ class _SignupLoginScreenState extends State<SignupLoginScreen> {
             hintText: 'e.g., +91-1234567890',
             hintStyle: const TextStyle(color: Colors.white54),
             filled: true,
-            fillColor: Colors.white
-                .withAlpha(51), // Replace withOpacity with withAlpha
+            fillColor: Colors.white.withAlpha(51),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
             suffixIcon: _isPhoneVerified
                 ? const Icon(Icons.check, color: Colors.green)
@@ -192,8 +192,7 @@ class _SignupLoginScreenState extends State<SignupLoginScreen> {
             labelText: 'Email',
             labelStyle: const TextStyle(color: Colors.white70),
             filled: true,
-            fillColor: Colors.white
-                .withAlpha(51), // Replace withOpacity with withAlpha
+            fillColor: Colors.white.withAlpha(51),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
           ),
           style: const TextStyle(color: Colors.white),
@@ -206,8 +205,7 @@ class _SignupLoginScreenState extends State<SignupLoginScreen> {
             labelText: 'Password',
             labelStyle: const TextStyle(color: Colors.white70),
             filled: true,
-            fillColor: Colors.white
-                .withAlpha(51), // Replace withOpacity with withAlpha
+            fillColor: Colors.white.withAlpha(51),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
           ),
           obscureText: true,
@@ -251,6 +249,23 @@ class _SignupLoginScreenState extends State<SignupLoginScreen> {
         return;
       }
       if (userCredential.user != null) {
+        // Fetch location before proceeding
+        bool hasLocation = await _checkAndRequestLocation();
+        if (!hasLocation) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text(
+                    'Location access is mandatory for safety features. Please enable location.')),
+          );
+          return;
+        }
+        // Store location in Realtime Database
+        Position position = await Geolocator.getCurrentPosition();
+        await _database.child('locations/${userCredential.user!.uid}').set({
+          'latitude': position.latitude,
+          'longitude': position.longitude,
+          'timestamp': DateTime.now().toIso8601String(),
+        });
         if (!mounted) return;
         Navigator.pushReplacementNamed(context, '/main');
       }
@@ -274,8 +289,7 @@ class _SignupLoginScreenState extends State<SignupLoginScreen> {
           handleCodeInApp: true,
           androidPackageName: 'com.example.param_mitra',
           androidInstallApp: true,
-          linkDomain:
-              'parammitra.page.link', // Replace deprecated dynamicLinkDomain
+          linkDomain: 'parammitra.page.link',
         ),
       );
       if (!mounted) return;
@@ -290,7 +304,6 @@ class _SignupLoginScreenState extends State<SignupLoginScreen> {
       setState(() => _isOtpSent = false);
     }
 
-    // Skip Phone OTP due to billing not enabled or limit reached
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -340,6 +353,25 @@ class _SignupLoginScreenState extends State<SignupLoginScreen> {
     );
   }
 
+  Future<bool> _checkAndRequestLocation() async {
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      return false;
+    }
+
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        return false;
+      }
+    }
+    if (permission == LocationPermission.deniedForever) {
+      return false;
+    }
+    return true;
+  }
+
   Future<void> _signup() async {
     if (!mounted) return;
     try {
@@ -349,12 +381,47 @@ class _SignupLoginScreenState extends State<SignupLoginScreen> {
         password: _signupPassword,
       );
       await userCredential.user?.sendEmailVerification();
-      await _firestore.collection('users').doc(userCredential.user!.uid).set({
+
+      // Default data as per requirements
+      Map<String, dynamic> defaultData = {
         'name': _signupName,
         'email': _signupEmail,
         'mobile': _signupNumber,
         'emailVerified': false,
+        'biometricToggle': false,
+        'liveLocationToggle': false,
+        'selectedLanguage': 'English',
+        'emergencyContacts': [
+          {'name': 'Parent', 'number': '+91-1234567890'},
+          {'name': 'Friend', 'number': '+91-0987654321'},
+        ],
+      };
+
+      // Store in Firestore
+      await _firestore
+          .collection('users')
+          .doc(userCredential.user!.uid)
+          .set(defaultData);
+
+      // Fetch location before proceeding
+      bool hasLocation = await _checkAndRequestLocation();
+      if (!hasLocation) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text(
+                  'Location access is mandatory for safety features. Please enable location.')),
+        );
+        return;
+      }
+
+      // Store location in Realtime Database
+      Position position = await Geolocator.getCurrentPosition();
+      await _database.child('locations/${userCredential.user!.uid}').set({
+        'latitude': position.latitude,
+        'longitude': position.longitude,
+        'timestamp': DateTime.now().toIso8601String(),
       });
+
       if (!mounted) return;
       Navigator.pushReplacementNamed(context, '/main');
     } catch (e) {
@@ -368,9 +435,23 @@ class _SignupLoginScreenState extends State<SignupLoginScreen> {
   void _signInWithGoogle() async {
     if (!mounted) return;
     try {
-      final GoogleAuthProvider googleProvider = GoogleAuthProvider();
+      final GoogleSignIn googleSignIn = GoogleSignIn(
+        scopes: ['email', 'https://www.googleapis.com/auth/userinfo.profile'],
+      );
+      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+      if (googleUser == null) {
+        return;
+      }
+
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
+      final AuthCredential credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
       final UserCredential userCredential =
-          await _auth.signInWithProvider(googleProvider);
+          await _auth.signInWithCredential(credential);
       User? user = userCredential.user;
 
       if (user != null) {
@@ -379,6 +460,23 @@ class _SignupLoginScreenState extends State<SignupLoginScreen> {
         if (!doc.exists) {
           _showGoogleDetailsDialog(user);
         } else {
+          // Fetch location before proceeding
+          bool hasLocation = await _checkAndRequestLocation();
+          if (!hasLocation) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                  content: Text(
+                      'Location access is mandatory for safety features. Please enable location.')),
+            );
+            return;
+          }
+          // Store location in Realtime Database
+          Position position = await Geolocator.getCurrentPosition();
+          await _database.child('locations/${user.uid}').set({
+            'latitude': position.latitude,
+            'longitude': position.longitude,
+            'timestamp': DateTime.now().toIso8601String(),
+          });
           if (!mounted) return;
           Navigator.pushReplacementNamed(context, '/main');
         }
@@ -418,18 +516,43 @@ class _SignupLoginScreenState extends State<SignupLoginScreen> {
             TextButton(
               onPressed: () async {
                 if (!mounted) return;
-                await _firestore.collection('users').doc(user.uid).set({
+                // Default data for Google sign-in
+                Map<String, dynamic> defaultData = {
                   'name': nameController.text,
                   'email': user.email,
                   'mobile': mobileController.text,
+                  'biometricToggle': false,
+                  'liveLocationToggle': false,
+                  'selectedLanguage': 'English',
                   'emergencyContacts': [
                     {'name': 'Parent', 'number': '+91-1234567890'},
                     {'name': 'Friend', 'number': '+91-0987654321'},
                   ],
-                  'liveLocationToggle': false,
-                  'biometricToggle': false,
-                  'selectedLanguage': 'English',
+                };
+                await _firestore
+                    .collection('users')
+                    .doc(user.uid)
+                    .set(defaultData);
+
+                // Fetch location before proceeding
+                bool hasLocation = await _checkAndRequestLocation();
+                if (!hasLocation) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                        content: Text(
+                            'Location access is mandatory for safety features. Please enable location.')),
+                  );
+                  return;
+                }
+
+                // Store location in Realtime Database
+                Position position = await Geolocator.getCurrentPosition();
+                await _database.child('locations/${user.uid}').set({
+                  'latitude': position.latitude,
+                  'longitude': position.longitude,
+                  'timestamp': DateTime.now().toIso8601String(),
                 });
+
                 if (!mounted) return;
                 Navigator.pop(context);
                 if (!mounted) return;
