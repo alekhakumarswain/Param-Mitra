@@ -5,6 +5,8 @@ import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class SafePathScreen extends StatefulWidget {
   const SafePathScreen({super.key});
@@ -30,6 +32,9 @@ class _SafePathScreenState extends State<SafePathScreen>
   late AnimationController _animationController;
   late Animation<double> _scaleAnimation;
   Timer? _debounceTimer;
+
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   final Map<String, LatLng> _nearbyLocations = {
     'Home': LatLng(20.2950, 85.8150),
@@ -407,13 +412,37 @@ class _SafePathScreenState extends State<SafePathScreen>
     }
   }
 
-  void _triggerSOS() {
-    _animationController.forward().then((_) {
+  Future<void> _triggerSOS() async {
+    _animationController.forward().then((_) async {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('SOS Alert Triggered! Emergency contacts notified.')),
-      );
+      User? user = _auth.currentUser;
+      if (user != null) {
+        DocumentSnapshot doc =
+            await _firestore.collection('users').doc(user.uid).get();
+        if (doc.exists) {
+          List<dynamic> emergencyContacts =
+              doc['emergencyContacts'] as List<dynamic>? ?? [];
+          if (emergencyContacts.isEmpty) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                  content: Text(
+                      'No emergency contacts found. Please add contacts in the Profile section.')),
+            );
+          } else {
+            // Simulate notifying emergency contacts
+            for (var contact in emergencyContacts) {
+              String name = contact['name'] as String;
+              String number = contact['number'] as String;
+              // In a real app, you would send an SMS or make a call here
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                    content:
+                        Text('Notified $name ($number) with your location.')),
+              );
+            }
+          }
+        }
+      }
       _animationController.reverse();
     });
   }

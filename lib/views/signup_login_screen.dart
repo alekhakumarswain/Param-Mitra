@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 
 class SignupLoginScreen extends StatefulWidget {
   const SignupLoginScreen({super.key});
@@ -13,90 +14,257 @@ class SignupLoginScreen extends StatefulWidget {
 }
 
 class _SignupLoginScreenState extends State<SignupLoginScreen> {
-  // State variables for login
-  String _loginEmailOrPhone = "";
-  String _loginPassword = "";
-  bool _isLogin = true;
-
-  // State variables for signup
-  final String _phoneOtp = "";
-  String _signupName = "";
-  String _signupNumber = "";
-  String _signupEmail = "";
-  String _signupPassword = "";
-  bool _isOtpSent = false;
-  bool _isPhoneVerified = false;
-
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final DatabaseReference _database = FirebaseDatabase.instance.ref();
+  final GoogleSignIn _googleSignIn = GoogleSignIn();
+
+  bool _isLoginMode = false;
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _numberController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _dobController = TextEditingController();
+  String _gender = "Male";
+  bool _isLoading = false;
+
+  void _showStyledToast(String message) {
+    Fluttertoast.showToast(
+      msg: message,
+      toastLength: Toast.LENGTH_LONG,
+      gravity: ToastGravity.TOP,
+      timeInSecForIosWeb: 3,
+      backgroundColor: Colors.transparent,
+      textColor: Colors.white,
+      fontSize: 16.0,
+      webBgColor: "linear-gradient(to right, #FF6A88, #FF99AC)",
+      webPosition: "center",
+      webShowClose: true,
+    );
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _numberController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    _dobController.dispose();
+    super.dispose();
+  }
+
+  void _clearFields() {
+    _nameController.clear();
+    _numberController.clear();
+    _emailController.clear();
+    _passwordController.clear();
+    _dobController.clear();
+    setState(() {
+      _gender = "Male";
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [Color(0xFF6A0DAD), Color(0xFF003366)],
+            colors: [Colors.purple.shade800, Colors.blue.shade900],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
         ),
         child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20.0),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  const Text(
-                    'Welcome to Param Mitra',
-                    style: TextStyle(
-                      fontSize: 28,
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24.0),
+            child: Card(
+              elevation: 8,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              color: const Color.fromRGBO(255, 255, 255, 0.1),
+              child: Padding(
+                padding: const EdgeInsets.all(20.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      _isLoginMode
+                          ? 'Login to Param Mitra'
+                          : 'Join Param Mitra',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        shadows: [
+                          Shadow(
+                            color: Colors.black.withOpacity(0.3),
+                            offset: const Offset(2, 2),
+                            blurRadius: 4,
+                          ),
+                        ],
+                      ),
+                      textAlign: TextAlign.center,
                     ),
-                  ),
-                  const SizedBox(height: 30),
-                  _isLogin ? _buildLoginForm() : _buildSignupForm(),
-                  if (_isOtpSent && !_isLogin)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 20),
+                    const SizedBox(height: 30),
+                    if (!_isLoginMode) ...[
+                      _buildTextField(
+                        label: 'Your Name',
+                        controller: _nameController,
+                      ),
+                      const SizedBox(height: 16),
+                      _buildTextField(
+                        label: 'Phone Number',
+                        controller: _numberController,
+                        keyboardType: TextInputType.number,
+                        maxLength: 10,
+                        prefixText: '+91 ',
+                      ),
+                      const SizedBox(height: 16),
+                      _buildTextField(
+                        label: 'Email',
+                        controller: _emailController,
+                        keyboardType: TextInputType.emailAddress,
+                      ),
+                      const SizedBox(height: 16),
+                      _buildTextField(
+                        label: 'Password',
+                        controller: _passwordController,
+                        obscureText: true,
+                      ),
+                      const SizedBox(height: 16),
+                      _buildTextField(
+                        label: 'Date of Birth (DD/MM/YYYY)',
+                        controller: _dobController,
+                        keyboardType: TextInputType.datetime,
+                      ),
+                      const SizedBox(height: 16),
+                      DropdownButtonFormField<String>(
+                        value: _gender,
+                        decoration: InputDecoration(
+                          labelText: 'Gender',
+                          labelStyle: const TextStyle(color: Colors.white70),
+                          filled: true,
+                          fillColor: const Color.fromRGBO(255, 255, 255, 0.2),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                        dropdownColor: Colors.blue.shade900,
+                        style: const TextStyle(color: Colors.white),
+                        items: ['Male', 'Female', 'Other']
+                            .map((gender) => DropdownMenuItem(
+                                  value: gender,
+                                  child: Text(gender),
+                                ))
+                            .toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            _gender = value!;
+                          });
+                        },
+                      ),
+                    ],
+                    if (_isLoginMode) ...[
+                      _buildTextField(
+                        label: 'Email',
+                        controller: _emailController,
+                        keyboardType: TextInputType.emailAddress,
+                      ),
+                      const SizedBox(height: 16),
+                      _buildTextField(
+                        label: 'Password',
+                        controller: _passwordController,
+                        obscureText: true,
+                      ),
+                    ],
+                    const SizedBox(height: 24),
+                    _isLoading
+                        ? const Center(child: CircularProgressIndicator())
+                        : ElevatedButton(
+                            onPressed: _isLoginMode ? _login : _register,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.purple.shade600,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              elevation: 4,
+                            ),
+                            child: Text(
+                              _isLoginMode ? 'Login' : 'Register',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                    const SizedBox(height: 16),
+                    _isLoading
+                        ? const SizedBox.shrink()
+                        : GestureDetector(
+                            onTap: _signInWithGoogle,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [Colors.white, Colors.grey.shade200],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                                borderRadius: BorderRadius.circular(12),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.2),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(
+                                    Icons.g_mobiledata,
+                                    size: 30,
+                                    color: Colors.black,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Text(
+                                    _isLoginMode
+                                        ? 'Login with Google'
+                                        : 'Sign up with Google',
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.black,
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                    const SizedBox(height: 20),
+                    TextButton(
+                      onPressed: () {
+                        setState(() {
+                          _isLoginMode = !_isLoginMode;
+                          _clearFields();
+                        });
+                      },
                       child: Text(
-                        'Please check your email for verification link',
-                        style: TextStyle(color: Colors.white70),
+                        _isLoginMode
+                            ? 'Need an account? Sign Up'
+                            : 'Already have an account? Login',
+                        style: const TextStyle(color: Colors.white70),
                       ),
                     ),
-                  const SizedBox(height: 20),
-                  TextButton(
-                    onPressed: () {
-                      setState(() {
-                        _isLogin = !_isLogin;
-                        _isOtpSent = false;
-                      });
-                    },
-                    child: Text(
-                      _isLogin
-                          ? 'Need an account? Sign Up'
-                          : 'Already have an account? Login',
-                      style:
-                          const TextStyle(color: Colors.white70, fontSize: 16),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  ElevatedButton.icon(
-                    onPressed: _signInWithGoogle,
-                    icon: const Icon(Icons.g_mobiledata),
-                    label: const Text('Sign in with Google'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: const Color(0xFF6A0DAD),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 20, vertical: 15),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -105,341 +273,196 @@ class _SignupLoginScreenState extends State<SignupLoginScreen> {
     );
   }
 
-  Widget _buildLoginForm() {
-    return Column(
-      children: [
-        TextField(
-          onChanged: (value) => setState(() => _loginEmailOrPhone = value),
-          decoration: InputDecoration(
-            labelText: 'Email or Phone Number',
-            labelStyle: const TextStyle(color: Colors.white70),
-            hintText: 'e.g., example@domain.com or +91-1234567890',
-            hintStyle: const TextStyle(color: Colors.white54),
-            filled: true,
-            fillColor: Colors.white.withAlpha(51),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-          ),
-          style: const TextStyle(color: Colors.white),
+  Widget _buildTextField({
+    required String label,
+    required TextEditingController controller,
+    TextInputType? keyboardType,
+    int? maxLength,
+    String? prefixText,
+    bool obscureText = false,
+  }) {
+    return TextField(
+      controller: controller,
+      keyboardType: keyboardType,
+      maxLength: maxLength,
+      obscureText: obscureText,
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(color: Colors.white70),
+        prefixText: prefixText,
+        prefixStyle: const TextStyle(color: Colors.white70),
+        filled: true,
+        fillColor: const Color.fromRGBO(255, 255, 255, 0.2),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
         ),
-        const SizedBox(height: 20),
-        TextField(
-          onChanged: (value) => setState(() => _loginPassword = value),
-          decoration: InputDecoration(
-            labelText: 'Password',
-            labelStyle: const TextStyle(color: Colors.white70),
-            filled: true,
-            fillColor: Colors.white.withAlpha(51),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-          ),
-          obscureText: true,
-          style: const TextStyle(color: Colors.white),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
         ),
-        const SizedBox(height: 20),
-        ElevatedButton(
-          onPressed: _loginEmailOrPhone.isEmpty || _loginPassword.isEmpty
-              ? null
-              : _login,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.white,
-            foregroundColor: const Color(0xFF6A0DAD),
-            padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 15),
-          ),
-          child: const Text(
-            'Login',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-          ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.purple.shade400),
         ),
-      ],
+      ),
+      style: const TextStyle(color: Colors.white),
     );
   }
 
-  Widget _buildSignupForm() {
-    return Column(
-      children: [
-        TextField(
-          onChanged: (value) => setState(() => _signupName = value),
-          decoration: InputDecoration(
-            labelText: 'Name',
-            labelStyle: const TextStyle(color: Colors.white70),
-            filled: true,
-            fillColor: Colors.white.withAlpha(51),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-          ),
-          style: const TextStyle(color: Colors.white),
-        ),
-        const SizedBox(height: 20),
-        TextField(
-          onChanged: (value) => setState(() => _signupNumber = value),
-          decoration: InputDecoration(
-            labelText: 'Phone Number',
-            labelStyle: const TextStyle(color: Colors.white70),
-            hintText: 'e.g., +91-1234567890',
-            hintStyle: const TextStyle(color: Colors.white54),
-            filled: true,
-            fillColor: Colors.white.withAlpha(51),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-            suffixIcon: _isPhoneVerified
-                ? const Icon(Icons.check, color: Colors.green)
-                : null,
-          ),
-          style: const TextStyle(color: Colors.white),
-          keyboardType: TextInputType.phone,
-        ),
-        const SizedBox(height: 20),
-        TextField(
-          onChanged: (value) => setState(() => _signupEmail = value),
-          decoration: InputDecoration(
-            labelText: 'Email',
-            labelStyle: const TextStyle(color: Colors.white70),
-            filled: true,
-            fillColor: Colors.white.withAlpha(51),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-          ),
-          style: const TextStyle(color: Colors.white),
-          keyboardType: TextInputType.emailAddress,
-        ),
-        const SizedBox(height: 20),
-        TextField(
-          onChanged: (value) => setState(() => _signupPassword = value),
-          decoration: InputDecoration(
-            labelText: 'Password',
-            labelStyle: const TextStyle(color: Colors.white70),
-            filled: true,
-            fillColor: Colors.white.withAlpha(51),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-          ),
-          obscureText: true,
-          style: const TextStyle(color: Colors.white),
-        ),
-        const SizedBox(height: 20),
-        ElevatedButton(
-          onPressed: _signupName.isEmpty ||
-                  _signupNumber.isEmpty ||
-                  _signupEmail.isEmpty ||
-                  _signupPassword.isEmpty
-              ? null
-              : (_isOtpSent ? null : _sendOtp),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.white,
-            foregroundColor: const Color(0xFF6A0DAD),
-            padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 15),
-          ),
-          child: const Text(
-            'Send OTP',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-          ),
-        ),
-      ],
-    );
-  }
-
-  void _login() async {
-    if (!mounted) return;
-    try {
-      UserCredential userCredential;
-      if (_loginEmailOrPhone.contains('@')) {
-        userCredential = await _auth.signInWithEmailAndPassword(
-          email: _loginEmailOrPhone,
-          password: _loginPassword,
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Phone login requires OTP setup')),
-        );
-        return;
-      }
-      if (userCredential.user != null) {
-        // Fetch location before proceeding
-        bool hasLocation = await _checkAndRequestLocation();
-        if (!hasLocation) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-                content: Text(
-                    'Location access is mandatory for safety features. Please enable location.')),
-          );
-          return;
-        }
-        // Store location in Realtime Database
-        Position position = await Geolocator.getCurrentPosition();
-        await _database.child('locations/${userCredential.user!.uid}').set({
-          'latitude': position.latitude,
-          'longitude': position.longitude,
-          'timestamp': DateTime.now().toIso8601String(),
-        });
-        if (!mounted) return;
-        Navigator.pushReplacementNamed(context, '/main');
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Login failed: $e')),
-      );
-    }
-  }
-
-  void _sendOtp() async {
-    if (!mounted) return;
-    setState(() => _isOtpSent = true);
-
-    try {
-      await _auth.sendSignInLinkToEmail(
-        email: _signupEmail,
-        actionCodeSettings: ActionCodeSettings(
-          url: 'https://parammitra.page.link/email_verify',
-          handleCodeInApp: true,
-          androidPackageName: 'com.example.param_mitra',
-          androidInstallApp: true,
-          linkDomain: 'parammitra.page.link',
-        ),
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Email verification link sent')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Email link failed: $e')),
-      );
-      setState(() => _isOtpSent = false);
+  void _register() async {
+    if (_nameController.text.isEmpty ||
+        _numberController.text.length != 10 ||
+        _emailController.text.isEmpty ||
+        _passwordController.text.length < 6 ||
+        _dobController.text.isEmpty) {
+      _showStyledToast('Please fill all fields correctly');
+      return;
     }
 
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-          content: Text(
-              'Phone OTP skipped due to billing not enabled or limit reached')),
-    );
-    _showOtpDialog();
-  }
+    setState(() {
+      _isLoading = true;
+    });
 
-  void _showOtpDialog() {
-    TextEditingController phoneOtpController = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Verify Phone OTP (Optional)'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: phoneOtpController,
-                decoration:
-                    const InputDecoration(labelText: 'Phone OTP (if received)'),
-                keyboardType: TextInputType.number,
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () async {
-                if (!mounted) return;
-                setState(() => _isPhoneVerified = true);
-                await _signup();
-                if (!mounted) return;
-                Navigator.pop(context);
-              },
-              child: const Text('Skip and Sign Up'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Future<bool> _checkAndRequestLocation() async {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      return false;
-    }
-
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) {
-        return false;
-      }
-    }
-    if (permission == LocationPermission.deniedForever) {
-      return false;
-    }
-    return true;
-  }
-
-  Future<void> _signup() async {
-    if (!mounted) return;
     try {
       UserCredential userCredential =
           await _auth.createUserWithEmailAndPassword(
-        email: _signupEmail,
-        password: _signupPassword,
+        email: _emailController.text,
+        password: _passwordController.text,
       );
-      await userCredential.user?.sendEmailVerification();
 
-      // Default data as per requirements
-      Map<String, dynamic> defaultData = {
-        'name': _signupName,
-        'email': _signupEmail,
-        'mobile': _signupNumber,
-        'emailVerified': false,
-        'biometricToggle': false,
-        'liveLocationToggle': false,
-        'selectedLanguage': 'English',
-        'emergencyContacts': [
-          {'name': 'Parent', 'number': '+91-1234567890'},
-          {'name': 'Friend', 'number': '+91-0987654321'},
-        ],
-      };
+      User? user = userCredential.user;
+      if (user != null) {
+        Map<String, dynamic> userData = {
+          'name': _nameController.text,
+          'mobile': '+91${_numberController.text}',
+          'email': _emailController.text,
+          'dob': _dobController.text,
+          'gender': _gender,
+          'emergencyContacts': [],
+          'liveLocationToggle': false,
+          'biometricToggle': false,
+          'selectedLanguage': 'English',
+          'emailVerified': false,
+          'profilePhotoUrl': null,
+        };
+        await _firestore.collection('users').doc(user.uid).set(userData);
 
-      // Store in Firestore
-      await _firestore
-          .collection('users')
-          .doc(userCredential.user!.uid)
-          .set(defaultData);
+        // Wait for Firestore write to complete
+        await Future.delayed(const Duration(seconds: 1));
 
-      // Fetch location before proceeding
-      bool hasLocation = await _checkAndRequestLocation();
-      if (!hasLocation) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text(
-                  'Location access is mandatory for safety features. Please enable location.')),
-        );
-        return;
+        await _sendEmailVerificationLink(user);
+        _showStyledToast('Verification email sent! Please check your inbox.');
       }
-
-      // Store location in Realtime Database
-      Position position = await Geolocator.getCurrentPosition();
-      await _database.child('locations/${userCredential.user!.uid}').set({
-        'latitude': position.latitude,
-        'longitude': position.longitude,
-        'timestamp': DateTime.now().toIso8601String(),
-      });
-
-      if (!mounted) return;
-      Navigator.pushReplacementNamed(context, '/main');
+    } on FirebaseAuthException catch (e) {
+      String errorMessage;
+      switch (e.code) {
+        case 'email-already-in-use':
+          errorMessage = 'This email is already registered.';
+          break;
+        case 'invalid-email':
+          errorMessage = 'The email address is not valid.';
+          break;
+        case 'weak-password':
+          errorMessage = 'The password is too weak. Use at least 6 characters.';
+          break;
+        default:
+          errorMessage = 'Registration failed: ${e.message}';
+      }
+      _showStyledToast(errorMessage);
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Signup failed: $e')),
-      );
+      _showStyledToast('An unexpected error occurred: $e');
+      debugPrint('Registration error: $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
 
-  void _signInWithGoogle() async {
-    if (!mounted) return;
+  void _login() async {
+    if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
+      _showStyledToast('Please fill all fields');
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
     try {
-      final GoogleSignIn googleSignIn = GoogleSignIn(
-        scopes: ['email', 'https://www.googleapis.com/auth/userinfo.profile'],
+      UserCredential userCredential = await _auth.signInWithEmailAndPassword(
+        email: _emailController.text,
+        password: _passwordController.text,
       );
-      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+
+      User? user = userCredential.user;
+      if (user != null) {
+        if (!user.emailVerified) {
+          _showStyledToast('Please verify your email first');
+          await _sendEmailVerificationLink(user);
+          setState(() {
+            _isLoading = false;
+          });
+          return;
+        }
+
+        bool hasLocation = await _checkAndRequestLocation();
+        if (hasLocation) {
+          Position position = await Geolocator.getCurrentPosition();
+          await _database.child('locations/${user.uid}').set({
+            'latitude': position.latitude,
+            'longitude': position.longitude,
+            'timestamp': DateTime.now().toIso8601String(),
+          });
+          if (!mounted) return;
+          Navigator.pushReplacementNamed(context, '/main');
+        } else {
+          if (!mounted) return;
+          _showStyledToast('Please enable location services');
+        }
+      }
+    } on FirebaseAuthException catch (e) {
+      String errorMessage;
+      switch (e.code) {
+        case 'user-not-found':
+          errorMessage = 'No user found with this email.';
+          break;
+        case 'wrong-password':
+          errorMessage = 'Incorrect password. Please try again.';
+          break;
+        case 'invalid-email':
+          errorMessage = 'The email address is not valid.';
+          break;
+        case 'user-disabled':
+          errorMessage = 'This account has been disabled.';
+          break;
+        default:
+          errorMessage = 'Login failed: ${e.message}';
+      }
+      _showStyledToast(errorMessage);
+    } catch (e) {
+      _showStyledToast('An unexpected error occurred: $e');
+      debugPrint('Login error: $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _signInWithGoogle() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
       if (googleUser == null) {
+        setState(() {
+          _isLoading = false;
+        });
         return;
       }
 
@@ -460,109 +483,341 @@ class _SignupLoginScreenState extends State<SignupLoginScreen> {
         if (!doc.exists) {
           _showGoogleDetailsDialog(user);
         } else {
-          // Fetch location before proceeding
           bool hasLocation = await _checkAndRequestLocation();
-          if (!hasLocation) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                  content: Text(
-                      'Location access is mandatory for safety features. Please enable location.')),
-            );
-            return;
+          if (hasLocation) {
+            Position position = await Geolocator.getCurrentPosition();
+            await _database.child('locations/${user.uid}').set({
+              'latitude': position.latitude,
+              'longitude': position.longitude,
+              'timestamp': DateTime.now().toIso8601String(),
+            });
+            if (!mounted) return;
+            Navigator.pushReplacementNamed(context, '/main');
+          } else {
+            if (!mounted) return;
+            _showStyledToast('Please enable location services');
           }
-          // Store location in Realtime Database
-          Position position = await Geolocator.getCurrentPosition();
-          await _database.child('locations/${user.uid}').set({
-            'latitude': position.latitude,
-            'longitude': position.longitude,
-            'timestamp': DateTime.now().toIso8601String(),
-          });
-          if (!mounted) return;
-          Navigator.pushReplacementNamed(context, '/main');
         }
       }
+    } on FirebaseAuthException catch (e) {
+      String errorMessage;
+      switch (e.code) {
+        case 'account-exists-with-different-credential':
+          errorMessage =
+              'An account already exists with a different credential.';
+          break;
+        case 'invalid-credential':
+          errorMessage = 'Invalid Google credentials.';
+          break;
+        default:
+          errorMessage = 'Google Sign-In failed: ${e.message}';
+      }
+      if (!mounted) return;
+      _showStyledToast(errorMessage);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Google sign-in failed: $e')),
-      );
+      _showStyledToast('An unexpected error occurred: $e');
+      debugPrint('Google Sign-In error: $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
 
   void _showGoogleDetailsDialog(User user) {
-    TextEditingController nameController =
-        TextEditingController(text: user.displayName ?? '');
-    TextEditingController mobileController = TextEditingController();
+    TextEditingController numberController = TextEditingController();
+    TextEditingController dobController = TextEditingController();
+    String gender = "Male";
 
     showDialog(
       context: context,
       builder: (context) {
-        return AlertDialog(
-          title: const Text('Complete Your Profile'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                decoration: const InputDecoration(labelText: 'Name'),
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
               ),
-              TextField(
-                controller: mobileController,
-                decoration: const InputDecoration(labelText: 'Mobile Number'),
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Colors.purple.shade800, Colors.blue.shade900],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                padding: const EdgeInsets.all(20),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'Complete Your Profile',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                          shadows: [
+                            Shadow(
+                              color: Colors.black54,
+                              offset: Offset(2, 2),
+                              blurRadius: 4,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      TextField(
+                        controller: numberController,
+                        decoration: InputDecoration(
+                          labelText: 'Phone Number',
+                          labelStyle: const TextStyle(color: Colors.white70),
+                          prefixText: '+91 ',
+                          prefixStyle: const TextStyle(color: Colors.white70),
+                          filled: true,
+                          fillColor: const Color.fromRGBO(255, 255, 255, 0.2),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                                color: Colors.white.withOpacity(0.3)),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide:
+                                BorderSide(color: Colors.purple.shade400),
+                          ),
+                        ),
+                        keyboardType: TextInputType.number,
+                        maxLength: 10,
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: dobController,
+                        decoration: InputDecoration(
+                          labelText: 'Date of Birth (DD/MM/YYYY)',
+                          labelStyle: const TextStyle(color: Colors.white70),
+                          filled: true,
+                          fillColor: const Color.fromRGBO(255, 255, 255, 0.2),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                                color: Colors.white.withOpacity(0.3)),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide:
+                                BorderSide(color: Colors.purple.shade400),
+                          ),
+                        ),
+                        keyboardType: TextInputType.datetime,
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                      const SizedBox(height: 16),
+                      DropdownButtonFormField<String>(
+                        value: gender,
+                        decoration: InputDecoration(
+                          labelText: 'Gender',
+                          labelStyle: const TextStyle(color: Colors.white70),
+                          filled: true,
+                          fillColor: const Color.fromRGBO(255, 255, 255, 0.2),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                                color: Colors.white.withOpacity(0.3)),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide:
+                                BorderSide(color: Colors.purple.shade400),
+                          ),
+                        ),
+                        dropdownColor: Colors.blue.shade900,
+                        style: const TextStyle(color: Colors.white),
+                        items: ['Male', 'Female', 'Other']
+                            .map((gender) => DropdownMenuItem(
+                                  value: gender,
+                                  child: Text(gender),
+                                ))
+                            .toList(),
+                        onChanged: (value) {
+                          setDialogState(() {
+                            gender = value!;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          GestureDetector(
+                            onTap: () async {
+                              if (numberController.text.length == 10 &&
+                                  dobController.text.isNotEmpty) {
+                                try {
+                                  Map<String, dynamic> userData = {
+                                    'name': user.displayName ?? '',
+                                    'mobile': '+91${numberController.text}',
+                                    'email': user.email ?? '',
+                                    'dob': dobController.text,
+                                    'gender': gender,
+                                    'emergencyContacts': [],
+                                    'liveLocationToggle': false,
+                                    'biometricToggle': false,
+                                    'selectedLanguage': 'English',
+                                    'emailVerified': true,
+                                    'profilePhotoUrl': null,
+                                  };
+                                  await _firestore
+                                      .collection('users')
+                                      .doc(user.uid)
+                                      .set(userData);
+
+                                  // Wait for Firestore write to complete
+                                  await Future.delayed(
+                                      const Duration(seconds: 1));
+
+                                  bool hasLocation =
+                                      await _checkAndRequestLocation();
+                                  if (hasLocation) {
+                                    Position position =
+                                        await Geolocator.getCurrentPosition();
+                                    await _database
+                                        .child('locations/${user.uid}')
+                                        .set({
+                                      'latitude': position.latitude,
+                                      'longitude': position.longitude,
+                                      'timestamp':
+                                          DateTime.now().toIso8601String(),
+                                    });
+                                    if (!mounted) return;
+                                    Navigator.pop(context);
+                                    Navigator.pushReplacementNamed(
+                                        context, '/main');
+                                  } else {
+                                    if (!mounted) return;
+                                    _showStyledToast(
+                                        'Please enable location services');
+                                  }
+                                } catch (e) {
+                                  _showStyledToast(
+                                      'Failed to save profile: $e');
+                                  debugPrint('Profile save error: $e');
+                                }
+                              } else {
+                                _showStyledToast(
+                                    'Enter a valid 10-digit number and DOB');
+                              }
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 20, vertical: 10),
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    Colors.purple.shade600,
+                                    Colors.blue.shade600,
+                                  ],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                                borderRadius: BorderRadius.circular(12),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.2),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: const Text(
+                                'Save',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: () => Navigator.pop(context),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 20, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade800,
+                                borderRadius: BorderRadius.circular(12),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.2),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: const Text(
+                                'Cancel',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
               ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () async {
-                if (!mounted) return;
-                // Default data for Google sign-in
-                Map<String, dynamic> defaultData = {
-                  'name': nameController.text,
-                  'email': user.email,
-                  'mobile': mobileController.text,
-                  'biometricToggle': false,
-                  'liveLocationToggle': false,
-                  'selectedLanguage': 'English',
-                  'emergencyContacts': [
-                    {'name': 'Parent', 'number': '+91-1234567890'},
-                    {'name': 'Friend', 'number': '+91-0987654321'},
-                  ],
-                };
-                await _firestore
-                    .collection('users')
-                    .doc(user.uid)
-                    .set(defaultData);
-
-                // Fetch location before proceeding
-                bool hasLocation = await _checkAndRequestLocation();
-                if (!hasLocation) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                        content: Text(
-                            'Location access is mandatory for safety features. Please enable location.')),
-                  );
-                  return;
-                }
-
-                // Store location in Realtime Database
-                Position position = await Geolocator.getCurrentPosition();
-                await _database.child('locations/${user.uid}').set({
-                  'latitude': position.latitude,
-                  'longitude': position.longitude,
-                  'timestamp': DateTime.now().toIso8601String(),
-                });
-
-                if (!mounted) return;
-                Navigator.pop(context);
-                if (!mounted) return;
-                Navigator.pushReplacementNamed(context, '/main');
-              },
-              child: const Text('Save'),
-            ),
-          ],
+            );
+          },
         );
       },
     );
+  }
+
+  Future<void> _sendEmailVerificationLink(User user) async {
+    try {
+      await user.sendEmailVerification();
+    } catch (e) {
+      _showStyledToast('Failed to send verification email: $e');
+      debugPrint('Email verification error: $e');
+    }
+  }
+
+  Future<bool> _checkAndRequestLocation() async {
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return false;
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) return false;
+      }
+      if (permission == LocationPermission.deniedForever) return false;
+      return true;
+    } catch (e) {
+      _showStyledToast('Location permission error: $e');
+      debugPrint('Location permission error: $e');
+      return false;
+    }
   }
 }
