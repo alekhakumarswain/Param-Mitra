@@ -1,10 +1,197 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart'; // Import the geocoding package
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
   @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  Map<String, dynamic>? _userData;
+  bool _isLiveLocationEnabled = false;
+  String _currentLocation = 'Fetching location...';
+  String _safetyStatus = 'Safe'; // Placeholder for safety status
+  bool _isLoading = true;
+
+  // Method to get the first name from the full name
+  String _getFirstName(String? fullName) {
+    if (fullName == null || fullName.isEmpty) {
+      return 'User';
+    }
+    return fullName.split(' ').first;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchUserData();
+    _requestLocationPermission();
+  }
+
+  Future<void> _fetchUserData() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      User? user = _auth.currentUser;
+      if (user != null) {
+        DocumentSnapshot doc =
+            await _firestore.collection('users').doc(user.uid).get();
+        if (doc.exists) {
+          setState(() {
+            _userData = doc.data() as Map<String, dynamic>;
+            _isLiveLocationEnabled = _userData?['liveLocationToggle'] ?? false;
+          });
+        } else {
+          _showSnackBar('User data not found.', isError: true);
+        }
+      } else {
+        _showSnackBar('User not authenticated. Please log in.', isError: true);
+        if (mounted) {
+          Navigator.pushReplacementNamed(context, '/signup-login');
+        }
+      }
+    } catch (e) {
+      _showSnackBar('Failed to fetch user data: $e', isError: true);
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _requestLocationPermission() async {
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        _showSnackBar('Location permission denied', isError: true);
+        setState(() => _currentLocation = 'Location unavailable');
+        return;
+      }
+    }
+    if (permission == LocationPermission.deniedForever) {
+      _showSnackBar('Location permission permanently denied', isError: true);
+      setState(() => _currentLocation = 'Location unavailable');
+      return;
+    }
+    _getCurrentLocation();
+  }
+
+  Future<void> _getCurrentLocation() async {
+    try {
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      // Perform reverse geocoding to get the city name
+      List<Placemark> placemarks = await placemarkFromCoordinates(
+        position.latitude,
+        position.longitude,
+      );
+
+      // Extract the city name (locality) from the placemark
+      String cityName = 'Unknown';
+      if (placemarks.isNotEmpty) {
+        Placemark placemark = placemarks.first;
+        cityName =
+            placemark.locality ?? placemark.subAdministrativeArea ?? 'Unknown';
+      }
+
+      setState(() {
+        _currentLocation = cityName; // Update the location to the city name
+      });
+
+      if (_isLiveLocationEnabled) {
+        _updateLocationInFirestore(position);
+      }
+    } catch (e) {
+      _showSnackBar('Failed to get location: $e', isError: true);
+      setState(() => _currentLocation = 'Location unavailable');
+    }
+  }
+
+  Future<void> _updateLocationInFirestore(Position position) async {
+    try {
+      User? user = _auth.currentUser;
+      if (user != null) {
+        await _firestore
+            .collection('users')
+            .doc(user.uid)
+            .collection('locations')
+            .doc(DateTime.now().toIso8601String())
+            .set({
+          'latitude': position.latitude,
+          'longitude': position.longitude,
+          'timestamp': DateTime.now().toIso8601String(),
+        });
+      }
+    } catch (e) {
+      _showSnackBar('Failed to update location: $e', isError: true);
+    }
+  }
+
+  void _showSnackBar(String message, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.red : Colors.green,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  void _toggleLiveLocation(bool value) async {
+    setState(() {
+      _isLiveLocationEnabled = value;
+    });
+    try {
+      User? user = _auth.currentUser;
+      if (user != null) {
+        await _firestore.collection('users').doc(user.uid).update({
+          'liveLocationToggle': value,
+        });
+        if (value) {
+          _getCurrentLocation();
+        }
+      }
+    } catch (e) {
+      _showSnackBar('Failed to update live location setting: $e',
+          isError: true);
+      setState(() {
+        _isLiveLocationEnabled = !value;
+      });
+    }
+  }
+
+  void _triggerSOS() {
+    _showSnackBar('SOS triggered!');
+  }
+
+  void _startFakeCall() {
+    _showSnackBar('Fake call initiated!');
+  }
+
+  void _navigateToSafePath() {
+    _showSnackBar('Navigating to SafePath!');
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
@@ -23,20 +210,21 @@ class HomeScreen extends StatelessWidget {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Column(
+                    Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Hello, Liza',
-                          style: TextStyle(
+                          'Hello, ${_getFirstName(_userData?['name'])}',
+                          style: const TextStyle(
                             fontSize: 20,
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                         Text(
-                          'Current Location: Mumbai',
-                          style: TextStyle(fontSize: 14, color: Colors.white70),
+                          'Current Location: $_currentLocation',
+                          style: const TextStyle(
+                              fontSize: 14, color: Colors.white70),
                         ),
                       ],
                     ),
@@ -44,12 +232,13 @@ class HomeScreen extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
-                        color: Colors.green,
+                        color:
+                            _safetyStatus == 'Safe' ? Colors.green : Colors.red,
                         borderRadius: BorderRadius.circular(20),
                       ),
-                      child: const Text(
-                        'Safe',
-                        style: TextStyle(color: Colors.white),
+                      child: Text(
+                        _safetyStatus,
+                        style: const TextStyle(color: Colors.white),
                       ),
                     ),
                   ],
@@ -65,9 +254,7 @@ class HomeScreen extends StatelessWidget {
                       children: [
                         // SOS Button
                         GestureDetector(
-                          onTap: () {
-                            // Handle SOS logic (e.g., press 3 times or hold for 3 seconds)
-                          },
+                          onLongPress: _triggerSOS,
                           child: Container(
                             width: 150,
                             height: 150,
@@ -100,10 +287,8 @@ class HomeScreen extends StatelessWidget {
                             ),
                             const SizedBox(width: 10),
                             Switch(
-                              value: false,
-                              onChanged: (value) {
-                                // Handle toggle logic
-                              },
+                              value: _isLiveLocationEnabled,
+                              onChanged: _toggleLiveLocation,
                               activeColor: Colors.white,
                               inactiveTrackColor: Colors.white54,
                             ),
@@ -113,9 +298,7 @@ class HomeScreen extends StatelessWidget {
 
                         // SafePath Navigation Button
                         ElevatedButton.icon(
-                          onPressed: () {
-                            // Navigate to SafePath Navigation
-                          },
+                          onPressed: _navigateToSafePath,
                           icon: const Icon(Icons.map),
                           label: const Text('SafePath Navigation'),
                           style: ElevatedButton.styleFrom(
@@ -129,9 +312,7 @@ class HomeScreen extends StatelessWidget {
 
                         // Fake Call Trigger Button
                         ElevatedButton.icon(
-                          onPressed: () {
-                            // Handle fake call logic
-                          },
+                          onPressed: _startFakeCall,
                           icon: const Icon(Icons.phone),
                           label: const Text('Fake Call'),
                           style: ElevatedButton.styleFrom(
@@ -153,16 +334,49 @@ class HomeScreen extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 10),
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: const Text(
-                            'No recent alerts in your area.',
-                            style: TextStyle(fontSize: 14, color: Colors.white),
-                          ),
+                        StreamBuilder<QuerySnapshot>(
+                          stream: _firestore
+                              .collection('safety_alerts')
+                              .snapshots(),
+                          builder: (context, snapshot) {
+                            if (!snapshot.hasData) {
+                              return const CircularProgressIndicator();
+                            }
+                            final alerts = snapshot.data!.docs;
+                            if (alerts.isEmpty) {
+                              return Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Text(
+                                  'No recent alerts in your area.',
+                                  style: TextStyle(
+                                      fontSize: 14, color: Colors.white),
+                                ),
+                              );
+                            }
+                            return Column(
+                              children: alerts.map((alert) {
+                                final data =
+                                    alert.data() as Map<String, dynamic>;
+                                return Container(
+                                  margin: const EdgeInsets.only(bottom: 5),
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Text(
+                                    data['message'] ?? 'Unknown alert',
+                                    style: const TextStyle(
+                                        fontSize: 14, color: Colors.white),
+                                  ),
+                                );
+                              }).toList(),
+                            );
+                          },
                         ),
                       ],
                     ),
