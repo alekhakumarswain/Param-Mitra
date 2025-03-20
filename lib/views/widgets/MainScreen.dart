@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../pages/safepath_screen.dart';
 import '../pages/community_screen.dart';
 import '../pages/home_screen.dart';
@@ -15,7 +16,6 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 2; // Set Home as Default Screen
 
-  // List of screens to display
   final List<Widget> _screens = [
     const SafePathScreen(),
     const CommunityScreen(),
@@ -23,6 +23,19 @@ class _MainScreenState extends State<MainScreen> {
     const ChatScreen(title: 'Suusri - Your Param Mitra'),
     const ProfileScreen(),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    // Navigate to SplashScreen automatically when MainScreen is loaded
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _navigateToSplashScreen();
+    });
+  }
+
+  void _navigateToSplashScreen() {
+    Navigator.pushReplacementNamed(context, '/splash');
+  }
 
   @override
   Widget build(BuildContext context) {

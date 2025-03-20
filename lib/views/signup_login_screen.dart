@@ -348,9 +348,6 @@ class _SignupLoginScreenState extends State<SignupLoginScreen> {
         };
         await _firestore.collection('users').doc(user.uid).set(userData);
 
-        // Wait for Firestore write to complete
-        await Future.delayed(const Duration(seconds: 1));
-
         await _sendEmailVerificationLink(user);
         _showStyledToast('Verification email sent! Please check your inbox.');
       }
@@ -415,10 +412,10 @@ class _SignupLoginScreenState extends State<SignupLoginScreen> {
             'longitude': position.longitude,
             'timestamp': DateTime.now().toIso8601String(),
           });
-          if (!mounted) return;
-          Navigator.pushReplacementNamed(context, '/main');
+          if (mounted) {
+            Navigator.pushReplacementNamed(context, '/main');
+          }
         } else {
-          if (!mounted) return;
           _showStyledToast('Please enable location services');
         }
       }
@@ -452,7 +449,6 @@ class _SignupLoginScreenState extends State<SignupLoginScreen> {
   }
 
   Future<void> _signInWithGoogle() async {
-    if (!mounted) return;
     setState(() {
       _isLoading = true;
     });
@@ -491,10 +487,10 @@ class _SignupLoginScreenState extends State<SignupLoginScreen> {
               'longitude': position.longitude,
               'timestamp': DateTime.now().toIso8601String(),
             });
-            if (!mounted) return;
-            Navigator.pushReplacementNamed(context, '/main');
+            if (mounted) {
+              Navigator.pushReplacementNamed(context, '/main');
+            }
           } else {
-            if (!mounted) return;
             _showStyledToast('Please enable location services');
           }
         }
@@ -512,10 +508,8 @@ class _SignupLoginScreenState extends State<SignupLoginScreen> {
         default:
           errorMessage = 'Google Sign-In failed: ${e.message}';
       }
-      if (!mounted) return;
       _showStyledToast(errorMessage);
     } catch (e) {
-      if (!mounted) return;
       _showStyledToast('An unexpected error occurred: $e');
       debugPrint('Google Sign-In error: $e');
     } finally {
@@ -687,10 +681,6 @@ class _SignupLoginScreenState extends State<SignupLoginScreen> {
                                       .doc(user.uid)
                                       .set(userData);
 
-                                  // Wait for Firestore write to complete
-                                  await Future.delayed(
-                                      const Duration(seconds: 1));
-
                                   bool hasLocation =
                                       await _checkAndRequestLocation();
                                   if (hasLocation) {
@@ -704,12 +694,12 @@ class _SignupLoginScreenState extends State<SignupLoginScreen> {
                                       'timestamp':
                                           DateTime.now().toIso8601String(),
                                     });
-                                    if (!mounted) return;
-                                    Navigator.pop(context);
-                                    Navigator.pushReplacementNamed(
-                                        context, '/main');
+                                    if (mounted) {
+                                      Navigator.pop(context);
+                                      Navigator.pushReplacementNamed(
+                                          context, '/main');
+                                    }
                                   } else {
-                                    if (!mounted) return;
                                     _showStyledToast(
                                         'Please enable location services');
                                   }
