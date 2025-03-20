@@ -24,15 +24,6 @@ class _MainScreenState extends State<MainScreen> {
     const ProfileScreen(),
   ];
 
-  @override
-  void initState() {
-    super.initState();
-    // Navigate to SplashScreen automatically when MainScreen is loaded
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _navigateToSplashScreen();
-    });
-  }
-
   void _navigateToSplashScreen() {
     Navigator.pushReplacementNamed(context, '/splash');
   }
@@ -40,7 +31,11 @@ class _MainScreenState extends State<MainScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _screens[_selectedIndex],
+      body: Stack(
+        children: [
+          _screens[_selectedIndex],
+        ],
+      ),
       bottomNavigationBar: Container(
         height: 115,
         decoration: const BoxDecoration(
