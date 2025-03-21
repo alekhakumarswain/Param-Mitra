@@ -36,14 +36,7 @@ class _SafePathScreenState extends State<SafePathScreen>
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  final Map<String, LatLng> _nearbyLocations = {
-    'Home': LatLng(20.2950, 85.8150),
-    'Work': LatLng(20.2980, 85.8200),
-    'Police': LatLng(20.3050, 85.8300),
-    'Hospital': LatLng(20.3000, 85.8200),
-    'Shelter': LatLng(20.3100, 85.8250),
-    'Library': LatLng(20.2900, 85.8100),
-  };
+  final Map<String, LatLng> _nearbyLocations = {};
 
   final List<LatLng> _highRiskZones = [
     LatLng(20.2970, 85.8220),
@@ -54,6 +47,7 @@ class _SafePathScreenState extends State<SafePathScreen>
   void initState() {
     super.initState();
     _getCurrentLocation();
+    _fetchUserLocations();
 
     _animationController = AnimationController(
       vsync: this,
@@ -62,6 +56,48 @@ class _SafePathScreenState extends State<SafePathScreen>
     _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
     );
+  }
+
+  Future<void> _fetchUserLocations() async {
+    User? user = _auth.currentUser;
+    if (user != null) {
+      try {
+        DocumentSnapshot doc =
+            await _firestore.collection('users').doc(user.uid).get();
+
+        if (doc.exists) {
+          // Check if the 'locations' field exists and is a List
+          if (doc.data() != null &&
+              (doc.data() as Map<String, dynamic>).containsKey('locations')) {
+            List<dynamic> locations = doc['locations'] as List<dynamic>? ?? [];
+
+            setState(() {
+              for (var location in locations) {
+                // Ensure each location has the required fields
+                if (location is Map<String, dynamic> &&
+                    location.containsKey('name') &&
+                    location.containsKey('latitude') &&
+                    location.containsKey('longitude')) {
+                  _nearbyLocations[location['name']] = LatLng(
+                    location['latitude'] as double,
+                    location['longitude'] as double,
+                  );
+                }
+              }
+            });
+          } else {
+            // Handle the case where 'locations' field does not exist
+            print('Locations field does not exist in the document.');
+          }
+        } else {
+          // Handle the case where the document does not exist
+          print('User document does not exist.');
+        }
+      } catch (e) {
+        // Handle any other errors
+        print('Error fetching user locations: $e');
+      }
+    }
   }
 
   @override
@@ -457,6 +493,172 @@ class _SafePathScreenState extends State<SafePathScreen>
       );
       _animationController.reverse();
     });
+  }
+
+  Future<void> _updateUserAddress(String locationName, LatLng location) async {
+    User? user = _auth.currentUser;
+    if (user != null) {
+      try {
+        DocumentSnapshot doc =
+            await _firestore.collection('users').doc(user.uid).get();
+
+        if (doc.exists) {
+          // Check if the document data is not null
+          if (doc.data() != null) {
+            Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+
+            // Initialize 'locations' if it doesn't exist
+            List<dynamic> locations = data['locations'] as List<dynamic>? ?? [];
+
+            // Check if the location already exists
+            int index =
+                locations.indexWhere((loc) => loc['name'] == locationName);
+
+            if (index != -1) {
+              // Update existing location
+              locations[index] = {
+                'name': locationName,
+                'latitude': location.latitude,
+                'longitude': location.longitude,
+              };
+            } else {
+              // Add new location
+              locations.add({
+                'name': locationName,
+                'latitude': location.latitude,
+                'longitude': location.longitude,
+              });
+            }
+
+            // Save to Firebase
+            await _firestore.collection('users').doc(user.uid).update({
+              'locations': locations,
+            });
+
+            // Update the local map
+            if (mounted) {
+              setState(() {
+                _nearbyLocations[locationName] = location;
+              });
+            }
+
+            _showCustomSnackBar('Location updated successfully!');
+          } else {
+            // Handle the case where document data is null
+            _showCustomSnackBar('Document data is null.', isError: true);
+          }
+        } else {
+          // Handle the case where the document does not exist
+          _showCustomSnackBar('User document does not exist.', isError: true);
+        }
+      } catch (e) {
+        // Handle any other errors
+        _showCustomSnackBar('Failed to update location: $e', isError: true);
+      }
+    }
+  }
+
+  void _showCustomSnackBar(String message, {bool isError = false}) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            message,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+            ),
+          ),
+          backgroundColor: isError ? Colors.red : Colors.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+          margin: const EdgeInsets.all(16),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
+  Future<void> _showAddressSelectionDialog(String locationName) async {
+    LatLng? selectedLocation;
+
+    await showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: Text('Select $locationName Location'),
+              content: SizedBox(
+                width: double.maxFinite,
+                height: 400,
+                child: FlutterMap(
+                  options: MapOptions(
+                    initialCenter: _currentPosition != null
+                        ? LatLng(_currentPosition!.latitude,
+                            _currentPosition!.longitude)
+                        : const LatLng(20.2961, 85.8245),
+                    initialZoom: 15,
+                    onTap: (tapPosition, point) {
+                      setState(() {
+                        selectedLocation =
+                            point; // Update the selected location
+                      });
+                    },
+                  ),
+                  children: [
+                    TileLayer(
+                      urlTemplate:
+                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      userAgentPackageName: 'com.example.app',
+                    ),
+                    if (selectedLocation != null)
+                      MarkerLayer(
+                        markers: [
+                          Marker(
+                            point: selectedLocation!,
+                            width: 40,
+                            height: 40,
+                            child: const Icon(
+                              Icons.location_on,
+                              color: Colors.red,
+                              size: 40,
+                            ),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                  },
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    if (selectedLocation != null) {
+                      _updateUserAddress(locationName, selectedLocation!);
+                      Navigator.pop(context);
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                            content: Text('Please select a location')),
+                      );
+                    }
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
@@ -914,13 +1116,21 @@ class _SafePathScreenState extends State<SafePathScreen>
   Widget _buildShortcutCard(String title, String subtitle, IconData icon) {
     return GestureDetector(
       onTap: () {
-        _animationController.forward().then((_) {
-          String destination = title.split(' ')[1];
-          if (mounted) {
-            _setDestination(destination, _nearbyLocations[destination]!);
-          }
-          _animationController.reverse();
-        });
+        String destination = title.split(' ')[1];
+        if (_nearbyLocations.containsKey(destination)) {
+          _setDestination(destination, _nearbyLocations[destination]!);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Please long press to add $destination address'),
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      },
+      onLongPress: () {
+        String locationName = title.split(' ')[1];
+        _showAddressSelectionDialog(locationName);
       },
       child: AnimatedBuilder(
         animation: _scaleAnimation,

@@ -106,16 +106,20 @@ class _HomeScreenState extends State<HomeScreen> {
             placemark.locality ?? placemark.subAdministrativeArea ?? 'Unknown';
       }
 
-      setState(() {
-        _currentLocation = cityName; // Update the location to the city name
-      });
+      if (mounted) {
+        setState(() {
+          _currentLocation = cityName; // Update the location to the city name
+        });
+      }
 
       if (_isLiveLocationEnabled) {
         _updateLocationInFirestore(position);
       }
     } catch (e) {
-      _showSnackBar('Failed to get location: $e', isError: true);
-      setState(() => _currentLocation = 'Location unavailable');
+      if (mounted) {
+        _showSnackBar('Failed to get location: $e', isError: true);
+        setState(() => _currentLocation = 'Location unavailable');
+      }
     }
   }
 
@@ -140,13 +144,15 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _showSnackBar(String message, {bool isError = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isError ? Colors.red : Colors.green,
-        duration: const Duration(seconds: 3),
-      ),
-    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: isError ? Colors.red : Colors.green,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
   }
 
   void _toggleLiveLocation(bool value) async {
