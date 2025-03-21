@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class SafePathScreen extends StatefulWidget {
@@ -19,6 +20,10 @@ class _SafePathScreenState extends State<SafePathScreen>
     with SingleTickerProviderStateMixin {
   final MapController _mapController = MapController();
   Position? _currentPosition;
+  List<LatLng> _pathPoints = []; // Stores the user's path
+  StreamSubscription<Position>?
+      _positionStreamSubscription; // Subscription for location updates
+
   List<LatLng> _safeRoutePoints = [];
   List<LatLng> _unsafeRoutePoints = [];
   bool _isLoading = true;
@@ -35,6 +40,8 @@ class _SafePathScreenState extends State<SafePathScreen>
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final DatabaseReference _databaseRef =
+      FirebaseDatabase.instance.ref(); // Firebase Realtime Database reference
 
   final Map<String, LatLng> _nearbyLocations = {};
 
@@ -43,11 +50,51 @@ class _SafePathScreenState extends State<SafePathScreen>
     LatLng(20.2980, 85.8230),
   ];
 
+  void _startPathTracking() {
+    const LocationSettings locationSettings = LocationSettings(
+      accuracy: LocationAccuracy.high,
+      distanceFilter: 10, // Update every 10 meters
+    );
+
+    _positionStreamSubscription =
+        Geolocator.getPositionStream(locationSettings: locationSettings)
+            .listen((Position position) {
+      setState(() {
+        _currentPosition = position;
+        _pathPoints.add(LatLng(
+            position.latitude, position.longitude)); // Add new position to path
+      });
+
+      // Store live location in Firebase
+      _storeLocationInFirebase(position);
+    });
+  }
+
+  void _storeLocationInFirebase(Position position) async {
+    User? user = _auth.currentUser;
+    if (user != null) {
+      try {
+        print('Storing location in Firebase for user: ${user.uid}');
+        await _databaseRef.child('locations/${user.uid}').push().set({
+          'latitude': position.latitude,
+          'longitude': position.longitude,
+          'timestamp': DateTime.now().toIso8601String(), // Store timestamp
+        });
+        print('Location stored successfully');
+      } catch (e) {
+        print('Error storing location in Firebase: $e');
+      }
+    } else {
+      print('User is not logged in');
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     _getCurrentLocation();
     _fetchUserLocations();
+    _startPathTracking(); // Start tracking the user's path
 
     _animationController = AnimationController(
       vsync: this,
@@ -105,6 +152,8 @@ class _SafePathScreenState extends State<SafePathScreen>
     _debounceTimer?.cancel();
     _animationController.dispose();
     _searchController.dispose();
+    _positionStreamSubscription
+        ?.cancel(); // Cancel the location stream subscription
     super.dispose();
   }
 
@@ -900,6 +949,13 @@ class _SafePathScreenState extends State<SafePathScreen>
                                           strokeWidth: 6,
                                           borderStrokeWidth: 2,
                                           borderColor: Colors.white,
+                                        ),
+                                        Polyline(
+                                          points: _pathPoints,
+                                          color: Colors.blue,
+                                          strokeWidth: 4,
+                                          strokeCap: StrokeCap.round,
+                                          borderColor: Colors.transparent,
                                         ),
                                       ],
                                     ),
