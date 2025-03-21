@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class CommunityScreen extends StatefulWidget {
   const CommunityScreen({super.key});
@@ -8,59 +10,8 @@ class CommunityScreen extends StatefulWidget {
 }
 
 class _CommunityScreenState extends State<CommunityScreen> {
-  // Sample data for MVP and advanced features
-  // ignore: prefer_final_fields
-  List<Map<String, String>> _nearbyUsers = [
-    {"name": "Volunteer John", "role": "Volunteer", "type": "Helper"},
-    {"name": "Officer Sharma", "role": "Police Officer", "type": "Police"},
-    {"name": "Priya", "role": "Verified User", "type": "Women"},
-  ];
-  // ignore: prefer_final_fields
-  List<Map<String, dynamic>> _safetyAlerts = [
-    {
-      "message": "⚠️ Reported: Stalking incident at XYZ Road.",
-      "upvotes": 5,
-      "downvotes": 1,
-      "comments": ["Stay safe, thanks for reporting!"]
-    },
-    {
-      "message": "🚨 Robbery reported near ABC Metro Station.",
-      "upvotes": 3,
-      "downvotes": 0,
-      "comments": ["I saw this too, very dangerous area."]
-    },
-    {
-      "message": "✔️ Safe Zone nearby: Police presence at Mall Road.",
-      "upvotes": 7,
-      "downvotes": 0,
-      "comments": <String>[]
-    },
-  ];
-  // ignore: prefer_final_fields
-  List<Map<String, String>> _safeZones = [
-    {"name": "Police Station", "distance": "1.2 km", "rating": "4.5"},
-    {"name": "City Hospital", "distance": "2.5 km", "rating": "4.8"},
-    {"name": "24/7 Cafe", "distance": "0.8 km", "rating": "4.2"},
-  ];
-  // ignore: prefer_final_fields
-  List<Map<String, String>> _discussionPosts = [
-    {
-      "title": "Safety Tips for Night Travel",
-      "content": "Always share your location..."
-    },
-    {
-      "title": "Recent Incident in ABC Area",
-      "content": "I faced harassment yesterday..."
-    },
-  ];
-  // ignore: prefer_final_fields
-  List<Map<String, dynamic>> _helpRequests = [
-    {
-      "message": "I'm feeling unsafe at XYZ Road. Can someone help?",
-      "user": "Liza",
-      "locationShared": true
-    },
-  ];
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   // State variables
   String _selectedFilter = "All";
@@ -69,18 +20,108 @@ class _CommunityScreenState extends State<CommunityScreen> {
   final TextEditingController _discussionController = TextEditingController();
   final TextEditingController _helpRequestController = TextEditingController();
   bool _shareLocation = false;
-  // ignore: prefer_final_fields
   double _safetyScore = 75.0; // Sample safety score (0-100)
+
+  // Fetch nearby users from Firestore
+  Stream<List<Map<String, String>>> _fetchNearbyUsers() {
+    return _firestore.collection('users').snapshots().map((snapshot) {
+      return snapshot.docs.map((doc) {
+        return {
+          "name": doc['name'] as String,
+          "role": doc['role'] as String,
+          "type": doc['type'] as String,
+        };
+      }).toList();
+    });
+  }
+
+  // Fetch safety alerts from Firestore
+  Stream<List<Map<String, dynamic>>> _fetchSafetyAlerts() {
+    return _firestore.collection('safetyAlerts').snapshots().map((snapshot) {
+      return snapshot.docs.map((doc) {
+        return {
+          "message": doc['message'],
+          "upvotes": doc['upvotes'],
+          "downvotes": doc['downvotes'],
+          "comments": doc['comments'],
+        };
+      }).toList();
+    });
+  }
+
+  // Fetch safe zones from Firestore
+  Stream<List<Map<String, String>>> _fetchSafeZones() {
+    return _firestore.collection('safeZones').snapshots().map((snapshot) {
+      return snapshot.docs.map((doc) {
+        return {
+          "name": doc['name'] as String,
+          "distance": doc['distance'] as String,
+          "rating": doc['rating'] as String,
+        };
+      }).toList();
+    });
+  }
+
+  // Fetch discussion posts from Firestore
+  Stream<List<Map<String, String>>> _fetchDiscussionPosts() {
+    return _firestore.collection('discussionPosts').snapshots().map((snapshot) {
+      return snapshot.docs.map((doc) {
+        return {
+          "title": doc['title'] as String,
+          "content": doc['content'] as String,
+        };
+      }).toList();
+    });
+  }
+
+  // Fetch help requests from Firestore
+  Stream<List<Map<String, dynamic>>> _fetchHelpRequests() {
+    return _firestore.collection('helpRequests').snapshots().map((snapshot) {
+      return snapshot.docs.map((doc) {
+        return {
+          "message": doc['message'],
+          "user": doc['user'],
+          "locationShared": doc['locationShared'],
+        };
+      }).toList();
+    });
+  }
+
+  // Add a new safety alert to Firestore
+  Future<void> _addSafetyAlert(String message, String location) async {
+    await _firestore.collection('safetyAlerts').add({
+      "message": "⚠️ Reported: $message at $location",
+      "upvotes": 0,
+      "downvotes": 0,
+      "comments": [],
+      "timestamp": DateTime.now(),
+    });
+  }
+
+  // Add a new discussion post to Firestore
+  Future<void> _addDiscussionPost(String title, String content) async {
+    await _firestore.collection('discussionPosts').add({
+      "title": title,
+      "content": content,
+      "timestamp": DateTime.now(),
+    });
+  }
+
+  // Add a new help request to Firestore
+  Future<void> _addHelpRequest(String message, bool shareLocation) async {
+    User? user = _auth.currentUser;
+    if (user != null) {
+      await _firestore.collection('helpRequests').add({
+        "message": message,
+        "user": user.email ?? "Anonymous",
+        "locationShared": shareLocation,
+        "timestamp": DateTime.now(),
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    // Filter nearby users based on selected filter
-    List<Map<String, String>> filteredUsers = _selectedFilter == "All"
-        ? _nearbyUsers
-        : _nearbyUsers
-            .where((user) => user["type"] == _selectedFilter)
-            .toList();
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Community'),
@@ -175,50 +216,69 @@ class _CommunityScreenState extends State<CommunityScreen> {
                 ],
               ),
               const SizedBox(height: 10),
-              ListView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: filteredUsers.length,
-                itemBuilder: (context, index) {
-                  return Card(
-                    color: Colors.white.withOpacity(0.2),
-                    margin: const EdgeInsets.only(bottom: 10),
-                    child: ListTile(
-                      leading: const Icon(Icons.person, color: Colors.white),
-                      title: Text(
-                        filteredUsers[index]["name"]!,
-                        style: const TextStyle(color: Colors.white),
-                      ),
-                      subtitle: Text(
-                        filteredUsers[index]["role"]!,
-                        style: TextStyle(color: Colors.white70),
-                      ),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.call, color: Colors.green),
-                            onPressed: () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                    content: Text(
-                                        'Calling ${filteredUsers[index]["name"]}')),
-                              );
-                            },
+              StreamBuilder<List<Map<String, String>>>(
+                stream: _fetchNearbyUsers(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (snapshot.hasError) {
+                    return Center(child: Text('Error: ${snapshot.error}'));
+                  }
+                  final filteredUsers = _selectedFilter == "All"
+                      ? snapshot.data!
+                      : snapshot.data!
+                          .where((user) => user["type"] == _selectedFilter)
+                          .toList();
+                  return ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: filteredUsers.length,
+                    itemBuilder: (context, index) {
+                      return Card(
+                        color: Colors.white.withOpacity(0.2),
+                        margin: const EdgeInsets.only(bottom: 10),
+                        child: ListTile(
+                          leading:
+                              const Icon(Icons.person, color: Colors.white),
+                          title: Text(
+                            filteredUsers[index]["name"]!,
+                            style: const TextStyle(color: Colors.white),
                           ),
-                          IconButton(
-                            icon: const Icon(Icons.message, color: Colors.blue),
-                            onPressed: () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                    content: Text(
-                                        'Messaging ${filteredUsers[index]["name"]}')),
-                              );
-                            },
+                          subtitle: Text(
+                            filteredUsers[index]["role"]!,
+                            style: TextStyle(color: Colors.white70),
                           ),
-                        ],
-                      ),
-                    ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon:
+                                    const Icon(Icons.call, color: Colors.green),
+                                onPressed: () {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                        content: Text(
+                                            'Calling ${filteredUsers[index]["name"]}')),
+                                  );
+                                },
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.message,
+                                    color: Colors.blue),
+                                onPressed: () {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                        content: Text(
+                                            'Messaging ${filteredUsers[index]["name"]}')),
+                                  );
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
                   );
                 },
               ),
@@ -234,121 +294,131 @@ class _CommunityScreenState extends State<CommunityScreen> {
                 ),
               ),
               const SizedBox(height: 10),
-              ListView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: _safetyAlerts.length,
-                itemBuilder: (context, index) {
-                  final comments =
-                      (_safetyAlerts[index]["comments"] as List<dynamic>)
-                          .map((comment) => comment.toString())
-                          .toList(); // Convert List<dynamic> to List<String>
-                  return Card(
-                    color: Colors.white.withOpacity(0.2),
-                    margin: const EdgeInsets.only(bottom: 10),
-                    child: ExpansionTile(
-                      title: Text(
-                        _safetyAlerts[index]["message"],
-                        style: const TextStyle(color: Colors.white),
-                      ),
-                      subtitle: Row(
-                        children: [
-                          const Icon(Icons.thumb_up,
-                              color: Colors.white70, size: 16),
-                          const SizedBox(width: 5),
-                          Text(
-                            _safetyAlerts[index]["upvotes"].toString(),
-                            style: TextStyle(color: Colors.white70),
+              StreamBuilder<List<Map<String, dynamic>>>(
+                stream: _fetchSafetyAlerts(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (snapshot.hasError) {
+                    return Center(child: Text('Error: ${snapshot.error}'));
+                  }
+                  return ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: snapshot.data!.length,
+                    itemBuilder: (context, index) {
+                      final comments =
+                          (snapshot.data![index]["comments"] as List<dynamic>)
+                              .map((comment) => comment.toString())
+                              .toList();
+                      return Card(
+                        color: Colors.white.withOpacity(0.2),
+                        margin: const EdgeInsets.only(bottom: 10),
+                        child: ExpansionTile(
+                          title: Text(
+                            snapshot.data![index]["message"],
+                            style: const TextStyle(color: Colors.white),
                           ),
-                          const SizedBox(width: 10),
-                          const Icon(Icons.thumb_down,
-                              color: Colors.white70, size: 16),
-                          const SizedBox(width: 5),
-                          Text(
-                            _safetyAlerts[index]["downvotes"].toString(),
-                            style: TextStyle(color: Colors.white70),
-                          ),
-                        ],
-                      ),
-                      trailing:
-                          const Icon(Icons.comment, color: Colors.white70),
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.all(8.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                          subtitle: Row(
                             children: [
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
+                              const Icon(Icons.thumb_up,
+                                  color: Colors.white70, size: 16),
+                              const SizedBox(width: 5),
+                              Text(
+                                snapshot.data![index]["upvotes"].toString(),
+                                style: TextStyle(color: Colors.white70),
+                              ),
+                              const SizedBox(width: 10),
+                              const Icon(Icons.thumb_down,
+                                  color: Colors.white70, size: 16),
+                              const SizedBox(width: 5),
+                              Text(
+                                snapshot.data![index]["downvotes"].toString(),
+                                style: TextStyle(color: Colors.white70),
+                              ),
+                            ],
+                          ),
+                          trailing:
+                              const Icon(Icons.comment, color: Colors.white70),
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.all(8.0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.thumb_up,
-                                        color: Colors.green),
-                                    onPressed: () {
-                                      setState(() {
-                                        _safetyAlerts[index]["upvotes"] =
-                                            _safetyAlerts[index]["upvotes"] + 1;
-                                      });
-                                    },
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      IconButton(
+                                        icon: const Icon(Icons.thumb_up,
+                                            color: Colors.green),
+                                        onPressed: () {
+                                          setState(() {
+                                            snapshot.data![index]["upvotes"]++;
+                                          });
+                                        },
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.thumb_down,
+                                            color: Colors.red),
+                                        onPressed: () {
+                                          setState(() {
+                                            snapshot.data![index]
+                                                ["downvotes"]++;
+                                          });
+                                        },
+                                      ),
+                                    ],
                                   ),
-                                  IconButton(
-                                    icon: const Icon(Icons.thumb_down,
-                                        color: Colors.red),
-                                    onPressed: () {
-                                      setState(() {
-                                        _safetyAlerts[index]["downvotes"] =
-                                            _safetyAlerts[index]["downvotes"] +
-                                                1;
-                                      });
+                                  const Divider(color: Colors.white54),
+                                  const Text(
+                                    "Comments",
+                                    style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold),
+                                  ),
+                                  ...comments.map<Widget>((comment) {
+                                    return Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 4.0),
+                                      child: Text(
+                                        comment,
+                                        style: TextStyle(color: Colors.white70),
+                                      ),
+                                    );
+                                  }),
+                                  TextField(
+                                    controller: _commentController,
+                                    decoration: InputDecoration(
+                                      hintText: "Add a comment...",
+                                      hintStyle:
+                                          TextStyle(color: Colors.white70),
+                                      filled: true,
+                                      fillColor: Colors.white.withOpacity(0.1),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                    ),
+                                    onSubmitted: (value) {
+                                      if (value.isNotEmpty) {
+                                        setState(() {
+                                          (snapshot.data![index]["comments"]
+                                                  as List<dynamic>)
+                                              .add(value);
+                                          _commentController.clear();
+                                        });
+                                      }
                                     },
                                   ),
                                 ],
                               ),
-                              const Divider(color: Colors.white54),
-                              const Text(
-                                "Comments",
-                                style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold),
-                              ),
-                              ...comments.map<Widget>((comment) {
-                                return Padding(
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 4.0),
-                                  child: Text(
-                                    comment,
-                                    style: TextStyle(color: Colors.white70),
-                                  ),
-                                );
-                              }),
-                              TextField(
-                                controller: _commentController,
-                                decoration: InputDecoration(
-                                  hintText: "Add a comment...",
-                                  hintStyle: TextStyle(color: Colors.white70),
-                                  filled: true,
-                                  fillColor: Colors.white.withOpacity(0.1),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                ),
-                                onSubmitted: (value) {
-                                  if (value.isNotEmpty) {
-                                    setState(() {
-                                      (_safetyAlerts[index]["comments"]
-                                              as List<dynamic>)
-                                          .add(value);
-                                      _commentController.clear();
-                                    });
-                                  }
-                                },
-                              ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      );
+                    },
                   );
                 },
               ),
@@ -431,41 +501,52 @@ class _CommunityScreenState extends State<CommunityScreen> {
                 ),
               ),
               const SizedBox(height: 10),
-              ListView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: _safeZones.length,
-                itemBuilder: (context, index) {
-                  return Card(
-                    color: Colors.white.withOpacity(0.2),
-                    margin: const EdgeInsets.only(bottom: 10),
-                    child: ListTile(
-                      leading:
-                          const Icon(Icons.location_on, color: Colors.green),
-                      title: Text(
-                        _safeZones[index]["name"]!,
-                        style: const TextStyle(color: Colors.white),
-                      ),
-                      subtitle: Text(
-                        "${_safeZones[index]["distance"]!} | Rating: ${_safeZones[index]["rating"]!}",
-                        style: TextStyle(color: Colors.white70),
-                      ),
-                      trailing: IconButton(
-                        icon:
-                            const Icon(Icons.star_border, color: Colors.white),
-                        onPressed: () {
-                          _showReviewDialog(
-                              context, _safeZones[index]["name"]!);
-                        },
-                      ),
-                      onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                              content: Text(
-                                  'Navigating to ${_safeZones[index]["name"]}')),
-                        );
-                      },
-                    ),
+              StreamBuilder<List<Map<String, String>>>(
+                stream: _fetchSafeZones(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (snapshot.hasError) {
+                    return Center(child: Text('Error: ${snapshot.error}'));
+                  }
+                  return ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: snapshot.data!.length,
+                    itemBuilder: (context, index) {
+                      return Card(
+                        color: Colors.white.withOpacity(0.2),
+                        margin: const EdgeInsets.only(bottom: 10),
+                        child: ListTile(
+                          leading: const Icon(Icons.location_on,
+                              color: Colors.green),
+                          title: Text(
+                            snapshot.data![index]["name"]!,
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                          subtitle: Text(
+                            "${snapshot.data![index]["distance"]!} | Rating: ${snapshot.data![index]["rating"]!}",
+                            style: TextStyle(color: Colors.white70),
+                          ),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.star_border,
+                                color: Colors.white),
+                            onPressed: () {
+                              _showReviewDialog(
+                                  context, snapshot.data![index]["name"]!);
+                            },
+                          ),
+                          onTap: () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                  content: Text(
+                                      'Navigating to ${snapshot.data![index]["name"]}')),
+                            );
+                          },
+                        ),
+                      );
+                    },
                   );
                 },
               ),
@@ -481,31 +562,42 @@ class _CommunityScreenState extends State<CommunityScreen> {
                 ),
               ),
               const SizedBox(height: 10),
-              ListView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: _discussionPosts.length,
-                itemBuilder: (context, index) {
-                  return Card(
-                    color: Colors.white.withOpacity(0.2),
-                    margin: const EdgeInsets.only(bottom: 10),
-                    child: ListTile(
-                      title: Text(
-                        _discussionPosts[index]["title"]!,
-                        style: const TextStyle(color: Colors.white),
-                      ),
-                      subtitle: Text(
-                        _discussionPosts[index]["content"]!,
-                        style: TextStyle(color: Colors.white70),
-                      ),
-                      onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                              content: Text(
-                                  'Viewing: ${_discussionPosts[index]["title"]}')),
-                        );
-                      },
-                    ),
+              StreamBuilder<List<Map<String, String>>>(
+                stream: _fetchDiscussionPosts(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (snapshot.hasError) {
+                    return Center(child: Text('Error: ${snapshot.error}'));
+                  }
+                  return ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: snapshot.data!.length,
+                    itemBuilder: (context, index) {
+                      return Card(
+                        color: Colors.white.withOpacity(0.2),
+                        margin: const EdgeInsets.only(bottom: 10),
+                        child: ListTile(
+                          title: Text(
+                            snapshot.data![index]["title"]!,
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                          subtitle: Text(
+                            snapshot.data![index]["content"]!,
+                            style: TextStyle(color: Colors.white70),
+                          ),
+                          onTap: () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                  content: Text(
+                                      'Viewing: ${snapshot.data![index]["title"]}')),
+                            );
+                          },
+                        ),
+                      );
+                    },
                   );
                 },
               ),
@@ -527,13 +619,9 @@ class _CommunityScreenState extends State<CommunityScreen> {
               ElevatedButton(
                 onPressed: () {
                   if (_discussionController.text.isNotEmpty) {
-                    setState(() {
-                      _discussionPosts.add({
-                        "title": "New Discussion",
-                        "content": _discussionController.text,
-                      });
-                      _discussionController.clear();
-                    });
+                    _addDiscussionPost(
+                        "New Discussion", _discussionController.text);
+                    _discussionController.clear();
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                           content: Text('Discussion posted successfully')),
@@ -560,34 +648,45 @@ class _CommunityScreenState extends State<CommunityScreen> {
                 ),
               ),
               const SizedBox(height: 10),
-              ListView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: _helpRequests.length,
-                itemBuilder: (context, index) {
-                  return Card(
-                    color: Colors.white.withOpacity(0.2),
-                    margin: const EdgeInsets.only(bottom: 10),
-                    child: ListTile(
-                      title: Text(
-                        _helpRequests[index]["message"]!,
-                        style: const TextStyle(color: Colors.white),
-                      ),
-                      subtitle: Text(
-                        "By: ${_helpRequests[index]["user"]!} | Location: ${_helpRequests[index]["locationShared"]! ? "Shared" : "Not Shared"}",
-                        style: TextStyle(color: Colors.white70),
-                      ),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.help, color: Colors.red),
-                        onPressed: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                                content: Text(
-                                    'Responding to ${_helpRequests[index]["user"]}')),
-                          );
-                        },
-                      ),
-                    ),
+              StreamBuilder<List<Map<String, dynamic>>>(
+                stream: _fetchHelpRequests(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (snapshot.hasError) {
+                    return Center(child: Text('Error: ${snapshot.error}'));
+                  }
+                  return ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: snapshot.data!.length,
+                    itemBuilder: (context, index) {
+                      return Card(
+                        color: Colors.white.withOpacity(0.2),
+                        margin: const EdgeInsets.only(bottom: 10),
+                        child: ListTile(
+                          title: Text(
+                            snapshot.data![index]["message"]!,
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                          subtitle: Text(
+                            "By: ${snapshot.data![index]["user"]!} | Location: ${snapshot.data![index]["locationShared"]! ? "Shared" : "Not Shared"}",
+                            style: TextStyle(color: Colors.white70),
+                          ),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.help, color: Colors.red),
+                            onPressed: () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                    content: Text(
+                                        'Responding to ${snapshot.data![index]["user"]}')),
+                              );
+                            },
+                          ),
+                        ),
+                      );
+                    },
                   );
                 },
               ),
@@ -623,15 +722,10 @@ class _CommunityScreenState extends State<CommunityScreen> {
               ElevatedButton(
                 onPressed: () {
                   if (_helpRequestController.text.isNotEmpty) {
-                    setState(() {
-                      _helpRequests.add({
-                        "message": _helpRequestController.text,
-                        "user": "Liza",
-                        "locationShared": _shareLocation,
-                      });
-                      _helpRequestController.clear();
-                      _shareLocation = false;
-                    });
+                    _addHelpRequest(
+                        _helpRequestController.text, _shareLocation);
+                    _helpRequestController.clear();
+                    _shareLocation = false;
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                           content: Text('Help request posted successfully')),
@@ -717,18 +811,10 @@ class _CommunityScreenState extends State<CommunityScreen> {
               onPressed: () {
                 if (_reportController.text.isNotEmpty &&
                     selectedLocation != null) {
-                  setState(() {
-                    _safetyAlerts.add({
-                      "message":
-                          "⚠️ Reported: ${_reportController.text} at $selectedLocation",
-                      "upvotes": 0,
-                      "downvotes": 0,
-                      "comments": <String>[],
-                    });
-                    _reportController.clear();
-                    locationController.clear();
-                    selectedLocation = null;
-                  });
+                  _addSafetyAlert(_reportController.text, selectedLocation!);
+                  _reportController.clear();
+                  locationController.clear();
+                  selectedLocation = null;
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
