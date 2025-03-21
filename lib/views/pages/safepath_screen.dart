@@ -20,7 +20,7 @@ class _SafePathScreenState extends State<SafePathScreen>
     with SingleTickerProviderStateMixin {
   final MapController _mapController = MapController();
   Position? _currentPosition;
-  List<LatLng> _pathPoints = []; // Stores the user's path
+  final List<LatLng> _pathPoints = []; // Stores the user's path
   StreamSubscription<Position>?
       _positionStreamSubscription; // Subscription for location updates
 
@@ -40,8 +40,6 @@ class _SafePathScreenState extends State<SafePathScreen>
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final DatabaseReference _databaseRef =
-      FirebaseDatabase.instance.ref(); // Firebase Realtime Database reference
 
   final Map<String, LatLng> _nearbyLocations = {};
 
@@ -50,6 +48,82 @@ class _SafePathScreenState extends State<SafePathScreen>
     LatLng(20.2980, 85.8230),
   ];
 
+  // Custom Alerts for High-Risk Zones
+  void _checkHighRiskZones() {
+    for (var zone in _highRiskZones) {
+      if (_currentPosition != null &&
+          _calculateDistance(
+                  LatLng(
+                      _currentPosition!.latitude, _currentPosition!.longitude),
+                  zone) <
+              0.5) {
+        // 0.5 km radius
+        _showCustomSnackBar('⚠️ You are entering a high-risk zone!',
+            isError: true);
+      }
+    }
+  }
+
+  // Save User's Path History
+  void _savePathHistory() async {
+    User? user = _auth.currentUser;
+    if (user != null && _pathPoints.isNotEmpty) {
+      try {
+        await _firestore.collection('pathHistory').doc(user.uid).set({
+          'path': _pathPoints
+              .map((point) => {
+                    'latitude': point.latitude,
+                    'longitude': point.longitude,
+                  })
+              .toList(),
+          'timestamp': DateTime.now().toIso8601String(),
+        });
+        debugPrint('Path history saved successfully');
+      } catch (e) {
+        debugPrint('Error saving path history: $e');
+      }
+    }
+  }
+
+  // Share Live Location
+  void _shareLiveLocation() async {
+    User? user = _auth.currentUser;
+    if (user != null && _currentPosition != null) {
+      try {
+        await _firestore.collection('liveLocations').doc(user.uid).set({
+          'latitude': _currentPosition!.latitude,
+          'longitude': _currentPosition!.longitude,
+          'timestamp': DateTime.now().toIso8601String(),
+        });
+        _showCustomSnackBar('Live location shared successfully!');
+      } catch (e) {
+        _showCustomSnackBar('Error sharing live location: $e', isError: true);
+      }
+    }
+  }
+
+  // Fetch User Locations from Firestore
+  Future<void> _fetchUserLocations() async {
+    User? user = _auth.currentUser;
+    if (user != null) {
+      try {
+        DocumentSnapshot doc =
+            await _firestore.collection('users').doc(user.uid).get();
+        if (doc.exists) {
+          Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+          List<dynamic> locations = data['locations'] ?? [];
+          for (var location in locations) {
+            _nearbyLocations[location['name']] =
+                LatLng(location['latitude'], location['longitude']);
+          }
+        }
+      } catch (e) {
+        debugPrint('Error fetching user locations: $e');
+      }
+    }
+  }
+
+  // Start Path Tracking
   void _startPathTracking() {
     const LocationSettings locationSettings = LocationSettings(
       accuracy: LocationAccuracy.high,
@@ -59,33 +133,37 @@ class _SafePathScreenState extends State<SafePathScreen>
     _positionStreamSubscription =
         Geolocator.getPositionStream(locationSettings: locationSettings)
             .listen((Position position) {
-      setState(() {
-        _currentPosition = position;
-        _pathPoints.add(LatLng(
-            position.latitude, position.longitude)); // Add new position to path
-      });
-
-      // Store live location in Firebase
-      _storeLocationInFirebase(position);
+      if (mounted) {
+        setState(() {
+          _currentPosition = position;
+          _pathPoints.add(LatLng(position.latitude, position.longitude));
+        });
+        _checkHighRiskZones();
+        _savePathHistory();
+      }
     });
   }
 
-  void _storeLocationInFirebase(Position position) async {
-    User? user = _auth.currentUser;
-    if (user != null) {
-      try {
-        print('Storing location in Firebase for user: ${user.uid}');
-        await _databaseRef.child('locations/${user.uid}').push().set({
-          'latitude': position.latitude,
-          'longitude': position.longitude,
-          'timestamp': DateTime.now().toIso8601String(), // Store timestamp
-        });
-        print('Location stored successfully');
-      } catch (e) {
-        print('Error storing location in Firebase: $e');
-      }
-    } else {
-      print('User is not logged in');
+  // Calculate Distance Between Two Points
+  double _calculateDistance(LatLng point1, LatLng point2) {
+    return Geolocator.distanceBetween(
+          point1.latitude,
+          point1.longitude,
+          point2.latitude,
+          point2.longitude,
+        ) /
+        1000;
+  }
+
+  // Show Custom SnackBar
+  void _showCustomSnackBar(String message, {bool isError = false}) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: isError ? Colors.red : Colors.green,
+        ),
+      );
     }
   }
 
@@ -94,57 +172,8 @@ class _SafePathScreenState extends State<SafePathScreen>
     super.initState();
     _getCurrentLocation();
     _fetchUserLocations();
-    _startPathTracking(); // Start tracking the user's path
-
-    _animationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 200),
-    );
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
-    );
-  }
-
-  Future<void> _fetchUserLocations() async {
-    User? user = _auth.currentUser;
-    if (user != null) {
-      try {
-        DocumentSnapshot doc =
-            await _firestore.collection('users').doc(user.uid).get();
-
-        if (doc.exists) {
-          // Check if the 'locations' field exists and is a List
-          if (doc.data() != null &&
-              (doc.data() as Map<String, dynamic>).containsKey('locations')) {
-            List<dynamic> locations = doc['locations'] as List<dynamic>? ?? [];
-
-            setState(() {
-              for (var location in locations) {
-                // Ensure each location has the required fields
-                if (location is Map<String, dynamic> &&
-                    location.containsKey('name') &&
-                    location.containsKey('latitude') &&
-                    location.containsKey('longitude')) {
-                  _nearbyLocations[location['name']] = LatLng(
-                    location['latitude'] as double,
-                    location['longitude'] as double,
-                  );
-                }
-              }
-            });
-          } else {
-            // Handle the case where 'locations' field does not exist
-            print('Locations field does not exist in the document.');
-          }
-        } else {
-          // Handle the case where the document does not exist
-          print('User document does not exist.');
-        }
-      } catch (e) {
-        // Handle any other errors
-        print('Error fetching user locations: $e');
-      }
-    }
+    _startPathTracking();
+    _startAnimations();
   }
 
   @override
@@ -152,9 +181,19 @@ class _SafePathScreenState extends State<SafePathScreen>
     _debounceTimer?.cancel();
     _animationController.dispose();
     _searchController.dispose();
-    _positionStreamSubscription
-        ?.cancel(); // Cancel the location stream subscription
+    _positionStreamSubscription?.cancel();
     super.dispose();
+  }
+
+  // Initialize Animations
+  void _startAnimations() {
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
+    );
   }
 
   Future<void> _getCurrentLocation() async {
@@ -320,16 +359,6 @@ class _SafePathScreenState extends State<SafePathScreen>
     return unsafePoints;
   }
 
-  double _calculateDistance(LatLng point1, LatLng point2) {
-    return Geolocator.distanceBetween(
-          point1.latitude,
-          point1.longitude,
-          point2.latitude,
-          point2.longitude,
-        ) /
-        1000;
-  }
-
   void _zoomIn() {
     _mapController.move(
         _mapController.camera.center, _mapController.camera.zoom + 1);
@@ -393,7 +422,7 @@ class _SafePathScreenState extends State<SafePathScreen>
       try {
         var encodedQuery = Uri.encodeQueryComponent(query);
         var url = Uri.parse(
-            'https://nominatim.openstreetmap.org/search?q=$encodedQuery&format=json&limit=5&countrycodes=IN');
+            'https://nominatim.openstreetmap.org/search?q=$encodedQuery&format=json&limit=10&countrycodes=IN');
         var response = await http.get(url, headers: {
           'User-Agent': 'SafePathApp/1.0 (contact: example@email.com)',
         });
@@ -604,29 +633,6 @@ class _SafePathScreenState extends State<SafePathScreen>
         // Handle any other errors
         _showCustomSnackBar('Failed to update location: $e', isError: true);
       }
-    }
-  }
-
-  void _showCustomSnackBar(String message, {bool isError = false}) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            message,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-            ),
-          ),
-          backgroundColor: isError ? Colors.red : Colors.green,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-          margin: const EdgeInsets.all(16),
-          duration: const Duration(seconds: 3),
-        ),
-      );
     }
   }
 
