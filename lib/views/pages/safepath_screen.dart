@@ -611,7 +611,8 @@ class _SafePathScreenState extends State<SafePathScreen>
                   children: [
                     TileLayer(
                       urlTemplate:
-                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                          'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      subdomains: ['a', 'b', 'c'],
                       userAgentPackageName: 'com.example.app',
                     ),
                     if (selectedLocation != null)
@@ -702,6 +703,7 @@ class _SafePathScreenState extends State<SafePathScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Search Bar and Autocomplete Suggestions
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 15),
                 child: Container(
@@ -887,7 +889,7 @@ class _SafePathScreenState extends State<SafePathScreen>
                                   children: [
                                     TileLayer(
                                       urlTemplate:
-                                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                                          'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
                                       userAgentPackageName: 'com.example.app',
                                     ),
                                     PolylineLayer(
