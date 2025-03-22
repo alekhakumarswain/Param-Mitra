@@ -383,7 +383,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
           ),
-          backgroundColor: Colors.white,
+          backgroundColor: const Color.fromARGB(255, 189, 129, 212),
           title: const Text(
             "Add Emergency Contact",
             style: TextStyle(
@@ -406,7 +406,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               },
               child: const Text(
                 "Cancel",
-                style: TextStyle(color: Colors.grey),
+                style: TextStyle(color: Color.fromARGB(255, 29, 22, 221)),
               ),
             ),
             ElevatedButton(
@@ -491,7 +491,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               },
               child: const Text(
                 "Cancel",
-                style: TextStyle(color: Colors.grey),
+                style: TextStyle(color: Color.fromARGB(255, 228, 190, 190)),
               ),
             ),
             ElevatedButton(
@@ -566,7 +566,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
           ),
-          backgroundColor: Colors.white,
+          backgroundColor: const Color.fromARGB(255, 67, 208, 208),
           title: const Text(
             "Delete Account",
             style: TextStyle(
@@ -589,7 +589,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               },
               child: const Text(
                 "Cancel",
-                style: TextStyle(color: Colors.grey),
+                style: TextStyle(color: Color.fromARGB(255, 66, 33, 228)),
               ),
             ),
             ElevatedButton(
