@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class CommunityScreen extends StatefulWidget {
   const CommunityScreen({super.key});
@@ -22,14 +23,14 @@ class _CommunityScreenState extends State<CommunityScreen> {
   bool _shareLocation = false;
   double _safetyScore = 75.0; // Sample safety score (0-100)
 
-  // Fetch nearby users from Firestore
-  Stream<List<Map<String, String>>> _fetchNearbyUsers() {
-    return _firestore.collection('users').snapshots().map((snapshot) {
+  // Fetch nearby volunteers from Firestore
+  Stream<List<Map<String, String>>> _fetchVolunteers() {
+    return _firestore.collection('volunteers').snapshots().map((snapshot) {
       return snapshot.docs.map((doc) {
         return {
           "name": doc['name'] as String,
           "role": doc['role'] as String,
-          "type": doc['type'] as String,
+          "number": doc['number'] as String, // नया फील्ड जोड़ें
         };
       }).toList();
     });
@@ -177,7 +178,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
               // Nearby Verified Users
               const SizedBox(height: 30),
               const Text(
-                "Nearby Trusted Users",
+                "Contact For Help",
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
@@ -217,7 +218,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
               ),
               const SizedBox(height: 10),
               StreamBuilder<List<Map<String, String>>>(
-                stream: _fetchNearbyUsers(),
+                stream: _fetchVolunteers(),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator());
@@ -225,56 +226,35 @@ class _CommunityScreenState extends State<CommunityScreen> {
                   if (snapshot.hasError) {
                     return Center(child: Text('Error: ${snapshot.error}'));
                   }
-                  final filteredUsers = _selectedFilter == "All"
-                      ? snapshot.data!
-                      : snapshot.data!
-                          .where((user) => user["type"] == _selectedFilter)
-                          .toList();
                   return ListView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
-                    itemCount: filteredUsers.length,
+                    itemCount: snapshot.data!.length,
                     itemBuilder: (context, index) {
                       return Card(
                         color: Colors.white.withOpacity(0.2),
                         margin: const EdgeInsets.only(bottom: 10),
                         child: ListTile(
-                          leading:
-                              const Icon(Icons.person, color: Colors.white),
+                          leading: const Icon(Icons.volunteer_activism,
+                              color: Colors.white),
                           title: Text(
-                            filteredUsers[index]["name"]!,
+                            snapshot.data![index]["name"]!,
                             style: const TextStyle(color: Colors.white),
                           ),
-                          subtitle: Text(
-                            filteredUsers[index]["role"]!,
-                            style: TextStyle(color: Colors.white70),
-                          ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              IconButton(
-                                icon:
-                                    const Icon(Icons.call, color: Colors.green),
-                                onPressed: () {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                        content: Text(
-                                            'Calling ${filteredUsers[index]["name"]}')),
-                                  );
-                                },
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.message,
-                                    color: Colors.blue),
-                                onPressed: () {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                        content: Text(
-                                            'Messaging ${filteredUsers[index]["name"]}')),
-                                  );
-                                },
-                              ),
+                              Text(snapshot.data![index]["role"]!,
+                                  style: TextStyle(color: Colors.white70)),
+                              Text(
+                                  "Contact: ${snapshot.data![index]["number"]!}",
+                                  style: TextStyle(color: Colors.white54)),
                             ],
+                          ),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.call, color: Colors.green),
+                            onPressed: () => _callVolunteer(
+                                snapshot.data![index]["number"]!),
                           ),
                         ),
                       );
@@ -745,6 +725,21 @@ class _CommunityScreenState extends State<CommunityScreen> {
         ),
       ),
     );
+  }
+
+  void _callVolunteer(String number) async {
+    final Uri phoneLaunchUri = Uri(
+      scheme: 'tel',
+      path: number,
+    );
+
+    if (await canLaunchUrl(phoneLaunchUri)) {
+      await launchUrl(phoneLaunchUri);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not launch $number')),
+      );
+    }
   }
 
   // Method to show location picker dialog
