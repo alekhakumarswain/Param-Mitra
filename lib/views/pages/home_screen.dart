@@ -22,6 +22,17 @@ class _HomeScreenState extends State<HomeScreen> {
   String _currentLocation = 'Fetching location...';
   String _safetyStatus = 'Safe'; // Placeholder for safety status
   bool _isLoading = true;
+  void _deleteSOSAlert(String alertKey) async {
+    try {
+      User? user = _auth.currentUser;
+      if (user != null) {
+        await _rtdb.child('SoSAlert/${user.uid}/$alertKey').remove();
+        _showSnackBar('SOS alert deleted successfully');
+      }
+    } catch (e) {
+      _showSnackBar('Failed to delete SOS alert: $e', isError: true);
+    }
+  }
 
   // Method to get the first name from the full name
   String _getFirstName(String? fullName) {
@@ -317,7 +328,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       children: [
                         // SOS Button
                         GestureDetector(
-                          onLongPress: _triggerSOS,
+                          onTap: _triggerSOS,
                           child: Container(
                             width: 150,
                             height: 150,
@@ -389,7 +400,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
                         // Latest Safety Alerts
                         const Text(
-                          'Latest Safety Alerts',
+                          'Your SOS Alerts',
                           style: TextStyle(
                             fontSize: 18,
                             color: Colors.white,
@@ -397,50 +408,99 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
                         const SizedBox(height: 10),
-                        StreamBuilder<QuerySnapshot>(
-                          stream: _firestore
-                              .collection('safety_alerts')
-                              .snapshots(),
-                          builder: (context, snapshot) {
-                            if (!snapshot.hasData) {
-                              return const CircularProgressIndicator();
-                            }
-                            final alerts = snapshot.data!.docs;
-                            if (alerts.isEmpty) {
-                              return Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.2),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: const Text(
-                                  'No recent alerts in your area.',
-                                  style: TextStyle(
-                                      fontSize: 14, color: Colors.white),
-                                ),
-                              );
-                            }
-                            return Column(
-                              children: alerts.map((alert) {
-                                final data =
-                                    alert.data() as Map<String, dynamic>;
+                        StreamBuilder<DatabaseEvent>(
+                            stream: _rtdb
+                                .child('SoSAlert/${_auth.currentUser?.uid}')
+                                .onValue,
+                            builder: (context, snapshot) {
+                              if (!snapshot.hasData) {
+                                return const CircularProgressIndicator();
+                              }
+
+                              final alerts = Map<String, dynamic>.from((snapshot
+                                      .data!
+                                      .snapshot
+                                      .value as Map<dynamic, dynamic>?) ??
+                                  {});
+
+                              if (alerts.isEmpty) {
                                 return Container(
-                                  margin: const EdgeInsets.only(bottom: 5),
-                                  padding: const EdgeInsets.all(12),
+                                  padding: const EdgeInsets.all(19),
                                   decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.2),
-                                    borderRadius: BorderRadius.circular(10),
+                                    color:
+                                        const Color.fromARGB(255, 235, 157, 157)
+                                            .withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(20),
                                   ),
-                                  child: Text(
-                                    data['message'] ?? 'Unknown alert',
-                                    style: const TextStyle(
+                                  child: const Text(
+                                    'No SOS alerts created yet.',
+                                    style: TextStyle(
                                         fontSize: 14, color: Colors.white),
                                   ),
                                 );
-                              }).toList(),
-                            );
-                          },
-                        ),
+                              }
+
+                              return Column(
+                                children: alerts.entries.map((entry) {
+                                  final alertData = Map<String, dynamic>.from(
+                                      entry.value as Map<dynamic, dynamic>);
+                                  final userInfo = Map<String, dynamic>.from(
+                                      alertData['User Identification']
+                                          as Map<dynamic, dynamic>);
+
+                                  return Container(
+                                    margin: const EdgeInsets.only(bottom: 5),
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color:
+                                          const Color.fromARGB(255, 247, 80, 80)
+                                              .withOpacity(0.2),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'SOS Alert - ${alertData['Date of SoS']}',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'Name: ${userInfo['name']}',
+                                          style: const TextStyle(
+                                              fontSize: 14,
+                                              color: Colors.white70),
+                                        ),
+                                        Text(
+                                          'Time: ${alertData['Time of SoS']?.toString().split('.')[0]}',
+                                          style: const TextStyle(
+                                              fontSize: 14,
+                                              color: Colors.white70),
+                                        ),
+                                        Text(
+                                          'Location: ${alertData['location']?['latitude']?.toStringAsFixed(4)}, '
+                                          '${alertData['location']?['longitude']?.toStringAsFixed(4)}',
+                                          style: const TextStyle(
+                                              fontSize: 14,
+                                              color: Colors.white70),
+                                        ),
+                                        // Add delete functionality if needed
+                                        IconButton(
+                                          icon: const Icon(Icons.delete,
+                                              color: Colors.white),
+                                          onPressed: () =>
+                                              _deleteSOSAlert(entry.key),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }).toList(),
+                              );
+                            })
                       ],
                     ),
                   ),
