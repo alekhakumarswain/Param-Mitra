@@ -103,14 +103,12 @@ class _FakeCallState extends State<FakeCall> with TickerProviderStateMixin {
   void _endCall() {
     _ringtonePlayer.stop(); // Use instance instead of static access
     _callTimer?.cancel();
-    _pulseController.dispose();
-    _fadeController.dispose();
     if (mounted) Navigator.pop(context);
   }
 
   @override
   void dispose() {
-    _ringtonePlayer.stop(); // Use instance instead of static access
+    _ringtonePlayer.stop();
     _pulseController.dispose();
     _fadeController.dispose();
     _callTimer?.cancel();

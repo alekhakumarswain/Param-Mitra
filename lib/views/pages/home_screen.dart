@@ -15,6 +15,34 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
+final List<Map<String, dynamic>> _callOptions = [
+  {
+    'title': 'Emergency Contact',
+    'icon': Icons.emergency,
+    'color': Colors.red,
+  },
+  {
+    'title': 'Bapa',
+    'icon': Icons.family_restroom,
+    'color': Colors.blue,
+  },
+  {
+    'title': 'Police',
+    'icon': Icons.local_police,
+    'color': Colors.blueGrey,
+  },
+  {
+    'title': 'Women Safety',
+    'icon': Icons.security,
+    'color': Colors.purple,
+  },
+  {
+    'title': 'Bhai',
+    'icon': Icons.people_alt,
+    'color': Colors.green,
+  },
+];
+
 class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -236,6 +264,70 @@ class _HomeScreenState extends State<HomeScreen>
         context, MaterialPageRoute(builder: (context) => SafePathScreen()));
   }
 
+  void _showCallSelectionDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          elevation: 10,
+          backgroundColor: Colors.transparent,
+          child: Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: const Color(0xFF6A0DAD),
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.3),
+                  blurRadius: 10,
+                  spreadRadius: 5,
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Select Call Type',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 15),
+                ..._callOptions.map((option) => ListTile(
+                      leading: Icon(option['icon'], color: option['color']),
+                      title: Text(
+                        option['title'],
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                        ),
+                      ),
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => FakeCall(
+                              callerName: option['title'],
+                            ),
+                          ),
+                        );
+                      },
+                    )),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading)
@@ -417,14 +509,25 @@ class _HomeScreenState extends State<HomeScreen>
                         ),
                         const SizedBox(height: 10),
                         ElevatedButton.icon(
-                          onPressed: _startFakeCall,
-                          icon: const Icon(Icons.phone),
-                          label: const Text('Fake Call'),
+                          onPressed: _showCallSelectionDialog,
+                          icon: const Icon(Icons.phone, size: 28),
+                          label: const Text(
+                            'Call',
+                            style: TextStyle(
+                              fontSize: 30,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.white,
-                            foregroundColor: const Color(0xFF6A0DAD),
+                            backgroundColor:
+                                const Color.fromARGB(255, 70, 220, 53),
+                            foregroundColor:
+                                const Color.fromARGB(255, 16, 15, 15),
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 20, vertical: 15),
+                                horizontal: 40, vertical: 20),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(45),
+                            ),
                           ),
                         ),
                         const SizedBox(height: 20),
