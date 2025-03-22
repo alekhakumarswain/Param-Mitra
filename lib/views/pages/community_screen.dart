@@ -2,6 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:geolocator/geolocator.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 
 class CommunityScreen extends StatefulWidget {
   const CommunityScreen({super.key});
@@ -21,7 +26,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
   final TextEditingController _discussionController = TextEditingController();
   final TextEditingController _helpRequestController = TextEditingController();
   bool _shareLocation = false;
-  double _safetyScore = 75.0; // Sample safety score (0-100)
+  final double _safetyScore = 75.0; // Sample safety score (0-100)
 
   // Fetch nearby volunteers from Firestore
   Stream<List<Map<String, String>>> _fetchVolunteers() {
@@ -30,24 +35,50 @@ class _CommunityScreenState extends State<CommunityScreen> {
         return {
           "name": doc['name'] as String,
           "role": doc['role'] as String,
-          "number": doc['number'] as String, // नया फील्ड जोड़ें
+          "number": doc['number'] as String,
         };
       }).toList();
     });
   }
 
   // Fetch safety alerts from Firestore
-  Stream<List<Map<String, dynamic>>> _fetchSafetyAlerts() {
+  Stream<List<Map<String, dynamic>>> _fetchSafetyAlerts(LatLng? userLocation) {
     return _firestore.collection('safetyAlerts').snapshots().map((snapshot) {
-      return snapshot.docs.map((doc) {
-        return {
-          "message": doc['message'],
-          "upvotes": doc['upvotes'],
-          "downvotes": doc['downvotes'],
-          "comments": doc['comments'],
-        };
-      }).toList();
+      List<Map<String, dynamic>> alerts = [];
+
+      for (var doc in snapshot.docs) {
+        try {
+          if (!doc.data().containsKey('coordinates')) continue;
+
+          final coordinates =
+              doc['coordinates'] as GeoPoint; // Explicit casting
+          LatLng alertLocation =
+              LatLng(coordinates.latitude, coordinates.longitude);
+
+          alerts.add({
+            'message': doc['message'] ?? 'No message',
+            'address': doc['address'] ?? 'Unknown location',
+            'distance': userLocation != null
+                ? _calculateDistance(userLocation, alertLocation)
+                : double.infinity,
+          });
+        } catch (e) {
+          print('Error processing document ${doc.id}: $e');
+        }
+      }
+
+      alerts.sort((a, b) => a['distance'].compareTo(b['distance']));
+      return alerts;
     });
+  }
+
+  double _calculateDistance(LatLng start, LatLng end) {
+    return Geolocator.distanceBetween(
+      start.latitude,
+      start.longitude,
+      end.latitude,
+      end.longitude,
+    );
   }
 
   // Fetch safe zones from Firestore
@@ -88,15 +119,77 @@ class _CommunityScreenState extends State<CommunityScreen> {
     });
   }
 
-  // Add a new safety alert to Firestore
-  Future<void> _addSafetyAlert(String message, String location) async {
-    await _firestore.collection('safetyAlerts').add({
-      "message": "⚠️ Reported: $message at $location",
-      "upvotes": 0,
-      "downvotes": 0,
-      "comments": [],
-      "timestamp": DateTime.now(),
+  Position? _currentPosition;
+  LatLng? _currentUserLocation;
+
+  Future<void> _getUserLocation() async {
+    Position position = await Geolocator.getCurrentPosition();
+    setState(() {
+      _currentUserLocation = LatLng(position.latitude, position.longitude);
     });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _getCurrentLocation();
+    _getUserLocation();
+  }
+
+// Add this method to get current location
+  Future<void> _getCurrentLocation() async {
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) return;
+
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) return;
+    }
+
+    if (permission == LocationPermission.deniedForever) return;
+
+    final position = await Geolocator.getCurrentPosition();
+    setState(() => _currentPosition = position);
+  }
+
+// Call this in initState
+
+  // Add a new safety alert to Firestore
+  Future<void> _addSafetyAlert(String message, LatLng location) async {
+    try {
+      String address = await _reverseGeocode(location);
+
+      await _firestore.collection('safetyAlerts').add({
+        "message": message,
+        "coordinates": GeoPoint(location.latitude, location.longitude), // ✅
+        "address": address,
+        "timestamp": FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      print('Error adding safety alert: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to save location: ${e.toString()}')),
+      );
+    }
+  }
+
+  Future<String> _reverseGeocode(LatLng location) async {
+    try {
+      final response = await http.get(
+        Uri.parse(
+            'https://nominatim.openstreetmap.org/reverse?format=json&lat=${location.latitude}&lon=${location.longitude}'),
+        headers: {'User-Agent': 'YourAppName/1.0'},
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['display_name']?.toString() ?? 'Unknown Location';
+      }
+      return 'Location: ${location.latitude.toStringAsFixed(4)}, ${location.longitude.toStringAsFixed(4)}';
+    } catch (e) {
+      return 'Error fetching address';
+    }
   }
 
   // Add a new discussion post to Firestore
@@ -275,128 +368,28 @@ class _CommunityScreenState extends State<CommunityScreen> {
               ),
               const SizedBox(height: 10),
               StreamBuilder<List<Map<String, dynamic>>>(
-                stream: _fetchSafetyAlerts(),
+                stream: _fetchSafetyAlerts(_currentUserLocation),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator());
                   }
                   if (snapshot.hasError) {
-                    return Center(child: Text('Error: ${snapshot.error}'));
+                    return Center(
+                        child: Text('Error: ${snapshot.error.toString()}'));
                   }
+                  if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                    return const Center(child: Text('No safety alerts found'));
+                  }
+
                   return ListView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     itemCount: snapshot.data!.length,
                     itemBuilder: (context, index) {
-                      final comments =
-                          (snapshot.data![index]["comments"] as List<dynamic>)
-                              .map((comment) => comment.toString())
-                              .toList();
-                      return Card(
-                        color: Colors.white.withOpacity(0.2),
-                        margin: const EdgeInsets.only(bottom: 10),
-                        child: ExpansionTile(
-                          title: Text(
-                            snapshot.data![index]["message"],
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                          subtitle: Row(
-                            children: [
-                              const Icon(Icons.thumb_up,
-                                  color: Colors.white70, size: 16),
-                              const SizedBox(width: 5),
-                              Text(
-                                snapshot.data![index]["upvotes"].toString(),
-                                style: TextStyle(color: Colors.white70),
-                              ),
-                              const SizedBox(width: 10),
-                              const Icon(Icons.thumb_down,
-                                  color: Colors.white70, size: 16),
-                              const SizedBox(width: 5),
-                              Text(
-                                snapshot.data![index]["downvotes"].toString(),
-                                style: TextStyle(color: Colors.white70),
-                              ),
-                            ],
-                          ),
-                          trailing:
-                              const Icon(Icons.comment, color: Colors.white70),
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.all(8.0),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      IconButton(
-                                        icon: const Icon(Icons.thumb_up,
-                                            color: Colors.green),
-                                        onPressed: () {
-                                          setState(() {
-                                            snapshot.data![index]["upvotes"]++;
-                                          });
-                                        },
-                                      ),
-                                      IconButton(
-                                        icon: const Icon(Icons.thumb_down,
-                                            color: Colors.red),
-                                        onPressed: () {
-                                          setState(() {
-                                            snapshot.data![index]
-                                                ["downvotes"]++;
-                                          });
-                                        },
-                                      ),
-                                    ],
-                                  ),
-                                  const Divider(color: Colors.white54),
-                                  const Text(
-                                    "Comments",
-                                    style: TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold),
-                                  ),
-                                  ...comments.map<Widget>((comment) {
-                                    return Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                          vertical: 4.0),
-                                      child: Text(
-                                        comment,
-                                        style: TextStyle(color: Colors.white70),
-                                      ),
-                                    );
-                                  }),
-                                  TextField(
-                                    controller: _commentController,
-                                    decoration: InputDecoration(
-                                      hintText: "Add a comment...",
-                                      hintStyle:
-                                          TextStyle(color: Colors.white70),
-                                      filled: true,
-                                      fillColor: Colors.white.withOpacity(0.1),
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                    ),
-                                    onSubmitted: (value) {
-                                      if (value.isNotEmpty) {
-                                        setState(() {
-                                          (snapshot.data![index]["comments"]
-                                                  as List<dynamic>)
-                                              .add(value);
-                                          _commentController.clear();
-                                        });
-                                      }
-                                    },
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
+                      return ListTile(
+                        title: Text(snapshot.data![index]["message"]),
+                        subtitle: Text("${snapshot.data![index]["address"]} "
+                            "(${snapshot.data![index]["distance"].toStringAsFixed(1)} m)"),
                       );
                     },
                   );
@@ -744,88 +737,101 @@ class _CommunityScreenState extends State<CommunityScreen> {
 
   // Method to show location picker dialog
   void _showLocationPickerDialog(BuildContext context) {
-    final TextEditingController locationController = TextEditingController();
-    String? selectedLocation;
+    LatLng? selectedLocation;
+    final MapController mapController = MapController(); // अंडरस्कोर हटाया
 
     showDialog(
       context: context,
       builder: (context) {
-        return AlertDialog(
-          title: const Text("Choose Location"),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Search bar for location input
-              TextField(
-                controller: locationController,
-                decoration: InputDecoration(
-                  hintText: "Search location...",
-                  suffixIcon: IconButton(
-                    icon: const Icon(Icons.search),
-                    onPressed: () {
-                      // Placeholder for location search API (e.g., Google Maps API or OpenStreetMap)
-                      // For now, we'll use a simple predefined list of locations
-                      setState(() {
-                        selectedLocation = locationController.text.isNotEmpty
-                            ? locationController.text
-                            : null;
-                      });
-                    },
-                  ),
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text("Select Unsafe Location"),
+              content: SizedBox(
+                width: double.maxFinite,
+                height: 400,
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: FlutterMap(
+                        mapController: mapController,
+                        options: MapOptions(
+                          initialCenter: _currentPosition != null
+                              ? LatLng(_currentPosition!.latitude,
+                                  _currentPosition!.longitude)
+                              : const LatLng(20.2961, 85.8245),
+                          initialZoom: 15,
+                          onTap: (tapPosition, point) {
+                            setState(() => selectedLocation = point);
+                          },
+                        ),
+                        children: [
+                          TileLayer(
+                            urlTemplate:
+                                'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                            subdomains: ['a', 'b', 'c'],
+                          ),
+                          if (selectedLocation != null)
+                            MarkerLayer(
+                              markers: [
+                                Marker(
+                                  point: selectedLocation!,
+                                  width: 40,
+                                  height: 40,
+                                  child: const Icon(
+                                    Icons.location_pin,
+                                    color: Colors.red,
+                                    size: 40,
+                                  ),
+                                ),
+                              ],
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    ElevatedButton.icon(
+                      icon: const Icon(Icons.my_location),
+                      label: const Text("Use Current Location"),
+                      onPressed: () async {
+                        final position = await Geolocator.getCurrentPosition();
+                        setState(() {
+                          selectedLocation =
+                              LatLng(position.latitude, position.longitude);
+                          mapController.move(
+                              selectedLocation!, mapController.camera.zoom);
+                        });
+                      },
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 10),
-              // Dropdown for predefined locations
-              DropdownButtonFormField<String>(
-                value: selectedLocation,
-                hint: const Text("Select a predefined location"),
-                items: <String>["XYZ Road", "ABC Metro Station", "Mall Road"]
-                    .map<DropdownMenuItem<String>>((String value) {
-                  return DropdownMenuItem<String>(
-                    value: value,
-                    child: Text(value),
-                  );
-                }).toList(),
-                onChanged: (String? newValue) {
-                  setState(() {
-                    selectedLocation = newValue;
-                    locationController.text = newValue ?? '';
-                  });
-                },
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-              },
-              child: const Text("Cancel"),
-            ),
-            TextButton(
-              onPressed: () {
-                if (_reportController.text.isNotEmpty &&
-                    selectedLocation != null) {
-                  _addSafetyAlert(_reportController.text, selectedLocation!);
-                  _reportController.clear();
-                  locationController.clear();
-                  selectedLocation = null;
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                        content: Text('Location reported successfully')),
-                  );
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                        content: Text(
-                            'Please select a location and add a description')),
-                  );
-                }
-              },
-              child: const Text("Submit"),
-            ),
-          ],
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text("Cancel"),
+                ),
+                TextButton(
+                  onPressed: () async {
+                    if (_reportController.text.isNotEmpty &&
+                        selectedLocation != null) {
+                      await _addSafetyAlert(
+                          _reportController.text, selectedLocation!);
+                      _reportController.clear();
+                      if (mounted) {
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                              content: Text('Location reported successfully')),
+                        );
+                      }
+                    }
+                  },
+                  child: const Text("Submit"),
+                ),
+              ],
+            );
+          },
         );
       },
     );
