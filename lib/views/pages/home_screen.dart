@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:geocoding/geocoding.dart'; // Import the geocoding package
+import 'package:geocoding/geocoding.dart';
+import '../../utils/fakeCall.dart';
+import 'package:firebase_database/firebase_database.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -14,6 +16,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final DatabaseReference _rtdb = FirebaseDatabase.instance.ref();
   Map<String, dynamic>? _userData;
   bool _isLiveLocationEnabled = false;
   String _currentLocation = 'Fetching location...';
@@ -178,12 +181,66 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _triggerSOS() {
-    _showSnackBar('SOS triggered!');
+  void _triggerSOS() async {
+    try {
+      User? user = _auth.currentUser;
+      if (user == null) {
+        _showSnackBar('User not authenticated', isError: true);
+        return;
+      }
+
+      // Get current location
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      // Get user data from Firestore
+      DocumentSnapshot doc =
+          await _firestore.collection('users').doc(user.uid).get();
+      Map<String, dynamic> userData = doc.data() as Map<String, dynamic>;
+
+      // Structure the SOS data
+      Map<String, dynamic> sosData = {
+        'Name': userData['name'] ?? 'Unknown',
+        'location': {
+          'latitude': position.latitude,
+          'longitude': position.longitude,
+        },
+        'User Number': userData['mobile'] ?? 'Not provided',
+        'User emergency contact number': _getEmergencyContact(userData),
+        'Device motion details': 'Not implemented', // Add sensor logic here
+        'Time of SoS': DateTime.now().toIso8601String(),
+        'Date of SoS': DateTime.now().toLocal().toString().split(' ')[0],
+        'User Identification': userData,
+        'Geofencing Data': 'Not implemented' // Add geofencing logic here
+      };
+
+      // Push to Realtime Database
+      await _rtdb.child('SoSAlert/${user.uid}').push().set(sosData);
+      _showSnackBar('SOS alert sent successfully!');
+    } catch (e) {
+      _showSnackBar('Failed to send SOS: $e', isError: true);
+    }
+  }
+
+  String _getEmergencyContact(Map<String, dynamic> userData) {
+    if (userData['emergencyContacts'] is List &&
+        (userData['emergencyContacts'] as List).isNotEmpty) {
+      return (userData['emergencyContacts'] as List).first['number'] ??
+          'Not provided';
+    }
+    return 'Not provided';
   }
 
   void _startFakeCall() {
-    _showSnackBar('Fake call initiated!');
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => FakeCall(
+          callerName: 'Emergency Contact',
+        ),
+      ),
+    );
   }
 
   void _navigateToSafePath() {
