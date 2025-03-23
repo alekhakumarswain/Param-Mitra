@@ -3,10 +3,21 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
-import '../../utils/fakeCall.dart';
-import '../pages/safepath_screen.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:intl/intl.dart';
+import 'package:twilio_flutter/twilio_flutter.dart'; // Twilio package
+import 'package:url_launcher/url_launcher.dart'; // For iOS fallback
+import 'dart:io' show Platform;
+import '../../utils/fakeCall.dart';
+import '../pages/safepath_screen.dart';
+
+final List<Map<String, dynamic>> _callOptions = [
+  {'title': 'Emergency Contact', 'icon': Icons.emergency, 'color': Colors.red},
+  {'title': 'Bapa', 'icon': Icons.family_restroom, 'color': Colors.blue},
+  {'title': 'Police', 'icon': Icons.local_police, 'color': Colors.blueGrey},
+  {'title': 'Women Safety', 'icon': Icons.security, 'color': Colors.purple},
+  {'title': 'Bhai', 'icon': Icons.people_alt, 'color': Colors.green},
+];
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -15,39 +26,13 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-final List<Map<String, dynamic>> _callOptions = [
-  {
-    'title': 'Emergency Contact',
-    'icon': Icons.emergency,
-    'color': Colors.red,
-  },
-  {
-    'title': 'Bapa',
-    'icon': Icons.family_restroom,
-    'color': Colors.blue,
-  },
-  {
-    'title': 'Police',
-    'icon': Icons.local_police,
-    'color': Colors.blueGrey,
-  },
-  {
-    'title': 'Women Safety',
-    'icon': Icons.security,
-    'color': Colors.purple,
-  },
-  {
-    'title': 'Bhai',
-    'icon': Icons.people_alt,
-    'color': Colors.green,
-  },
-];
-
 class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final DatabaseReference _rtdb = FirebaseDatabase.instance.ref();
+  TwilioFlutter?
+      _twilioFlutter; // Twilio instance (initialized after fetching credentials)
   Map<String, dynamic>? _userData;
   bool _isLiveLocationEnabled = false;
   String _currentLocation = 'Fetching location...';
@@ -68,14 +53,41 @@ class _HomeScreenState extends State<HomeScreen>
     _scaleAnimation = Tween<double>(begin: 1.0, end: 0.9).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
     );
-    _fetchUserData();
-    _requestLocationPermission();
+    _initializeData(); // Initialize Twilio and user data
   }
 
   @override
   void dispose() {
     _animationController.dispose();
     super.dispose();
+  }
+
+  // Initialize Twilio credentials and user data
+  Future<void> _initializeData() async {
+    await _fetchTwilioCredentials(); // Ensure Twilio credentials are fetched first
+    await _fetchUserData();
+    await _requestLocationPermission();
+  }
+
+  // Fetch Twilio credentials from Firestore
+  Future<void> _fetchTwilioCredentials() async {
+    try {
+      DocumentSnapshot doc =
+          await _firestore.collection('appConfig').doc('twilio').get();
+      if (doc.exists) {
+        Map<String, dynamic> twilioData = doc.data() as Map<String, dynamic>;
+        _twilioFlutter = TwilioFlutter(
+          accountSid: twilioData['accountSid'],
+          authToken: twilioData['authToken'],
+          twilioNumber: twilioData['twilioNumber'],
+        );
+      } else {
+        _showSnackBar('Twilio credentials not found in Firestore',
+            isError: true);
+      }
+    } catch (e) {
+      _showSnackBar('Failed to fetch Twilio credentials: $e', isError: true);
+    }
   }
 
   void _deleteSOSAlert(String alertKey) async {
@@ -210,6 +222,16 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
+  Future<void> _sendSMSForIOS(String number, String message) async {
+    final Uri smsUri =
+        Uri(scheme: 'sms', path: number, queryParameters: {'body': message});
+    if (await canLaunchUrl(smsUri)) {
+      await launchUrl(smsUri);
+    } else {
+      _showSnackBar('Could not launch SMS app', isError: true);
+    }
+  }
+
   void _triggerSOS() async {
     try {
       User? user = _auth.currentUser;
@@ -222,6 +244,8 @@ class _HomeScreenState extends State<HomeScreen>
       DocumentSnapshot doc =
           await _firestore.collection('users').doc(user.uid).get();
       Map<String, dynamic> userData = doc.data() as Map<String, dynamic>;
+
+      // Store SOS data in Firebase Realtime Database
       Map<String, dynamic> sosData = {
         'Name': userData['name'] ?? 'Unknown',
         'location': {
@@ -238,8 +262,46 @@ class _HomeScreenState extends State<HomeScreen>
       };
       await _rtdb.child('SoSAlert/${user.uid}').push().set(sosData);
       _showSnackBar('SOS alert sent successfully!');
+
+      // Prepare SMS message
+      String emergencyContact = _getEmergencyContact(userData);
+      if (emergencyContact == 'Not provided') {
+        _showSnackBar('No emergency contact found', isError: true);
+        return;
+      }
+      // Ensure emergency contact has country code
+      if (!emergencyContact.startsWith('+')) {
+        emergencyContact =
+            '+91$emergencyContact'; // Adjust country code as needed
+      }
+      String userName = userData['name'] ?? 'Unknown';
+      String smsMessage = '🚨 PARAM MITRA ALERT: $userName needs help!\n'
+          '📍 Loc: https://maps.google.com/?q=${position.latitude},${position.longitude}\n'
+          '🕒 Time: ${DateFormat('HH:mm').format(DateTime.now())}\n';
+
+      // Send SMS via Twilio for Android, fallback to URL scheme for iOS
+      if (Platform.isAndroid) {
+        if (_twilioFlutter == null) {
+          _showSnackBar('Twilio not initialized', isError: true);
+          return;
+        }
+        try {
+          await _twilioFlutter!.sendSMS(
+            // Use ! since we checked for null above
+            toNumber: emergencyContact,
+            messageBody: smsMessage,
+          );
+          _showSnackBar('SMS sent to emergency contact via Twilio');
+        } catch (e) {
+          _showSnackBar('Failed to send SMS via Twilio: $e', isError: true);
+        }
+      } else if (Platform.isIOS) {
+        await _sendSMSForIOS(emergencyContact, smsMessage);
+      } else {
+        _showSnackBar('SMS not supported on this platform', isError: true);
+      }
     } catch (e) {
-      _showSnackBar('Failed to send SOS: $e', isError: true);
+      _showSnackBar('Failed to send SOS or SMS: $e', isError: true);
     }
   }
 
@@ -269,9 +331,8 @@ class _HomeScreenState extends State<HomeScreen>
       context: context,
       builder: (BuildContext context) {
         return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           elevation: 10,
           backgroundColor: Colors.transparent,
           child: Container(
@@ -281,43 +342,32 @@ class _HomeScreenState extends State<HomeScreen>
               borderRadius: BorderRadius.circular(20),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.3),
-                  blurRadius: 10,
-                  spreadRadius: 5,
-                ),
+                    color: Colors.black.withOpacity(0.3),
+                    blurRadius: 10,
+                    spreadRadius: 5)
               ],
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text(
-                  'Select Call Type',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                const Text('Select Call Type',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold)),
                 const SizedBox(height: 15),
                 ..._callOptions.map((option) => ListTile(
                       leading: Icon(option['icon'], color: option['color']),
-                      title: Text(
-                        option['title'],
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                        ),
-                      ),
+                      title: Text(option['title'],
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 16)),
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => FakeCall(
-                              callerName: option['title'],
-                            ),
-                          ),
-                        );
+                            context,
+                            MaterialPageRoute(
+                                builder: (context) =>
+                                    FakeCall(callerName: option['title'])));
                       },
                     )),
               ],
@@ -336,10 +386,9 @@ class _HomeScreenState extends State<HomeScreen>
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [Color(0xFF6A0DAD), Color(0xFF003366)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
+              colors: [Color(0xFF6A0DAD), Color(0xFF003366)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight),
         ),
         child: SafeArea(
           child: Column(
@@ -410,16 +459,14 @@ class _HomeScreenState extends State<HomeScreen>
                                   decoration: BoxDecoration(
                                     shape: BoxShape.circle,
                                     gradient: const RadialGradient(
-                                      colors: [Colors.red, Color(0xFFD00000)],
-                                      center: Alignment.center,
-                                      radius: 0.8,
-                                    ),
+                                        colors: [Colors.red, Color(0xFFD00000)],
+                                        center: Alignment.center,
+                                        radius: 0.8),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: Colors.red.withOpacity(0.5),
-                                        blurRadius: 20,
-                                        spreadRadius: _isPressed ? 10 : 5,
-                                      ),
+                                          color: Colors.red.withOpacity(0.5),
+                                          blurRadius: 20,
+                                          spreadRadius: _isPressed ? 10 : 5)
                                     ],
                                   ),
                                   child: Stack(
@@ -431,25 +478,21 @@ class _HomeScreenState extends State<HomeScreen>
                                         width: _isPressed ? 180 : 0,
                                         height: _isPressed ? 180 : 0,
                                         decoration: BoxDecoration(
-                                          shape: BoxShape.circle,
-                                          color: Colors.white.withOpacity(
-                                              _isPressed ? 0.2 : 0),
-                                        ),
+                                            shape: BoxShape.circle,
+                                            color: Colors.white.withOpacity(
+                                                _isPressed ? 0.2 : 0)),
                                       ),
-                                      const Text(
-                                        'SOS',
-                                        style: TextStyle(
-                                          fontSize: 32,
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                          shadows: [
-                                            Shadow(
-                                                color: Colors.black26,
-                                                offset: Offset(2, 2),
-                                                blurRadius: 4),
-                                          ],
-                                        ),
-                                      ),
+                                      const Text('SOS',
+                                          style: TextStyle(
+                                              fontSize: 32,
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.bold,
+                                              shadows: [
+                                                Shadow(
+                                                    color: Colors.black26,
+                                                    offset: Offset(2, 2),
+                                                    blurRadius: 4),
+                                              ])),
                                       if (_isPressed)
                                         ...List.generate(8, (index) {
                                           return Positioned(
@@ -461,14 +504,12 @@ class _HomeScreenState extends State<HomeScreen>
                                               duration: const Duration(
                                                   milliseconds: 300),
                                               child: Container(
-                                                width: 8,
-                                                height: 8,
-                                                decoration: BoxDecoration(
-                                                  shape: BoxShape.circle,
-                                                  color: Colors.white
-                                                      .withOpacity(0.7),
-                                                ),
-                                              ),
+                                                  width: 8,
+                                                  height: 8,
+                                                  decoration: BoxDecoration(
+                                                      shape: BoxShape.circle,
+                                                      color: Colors.white
+                                                          .withOpacity(0.7))),
                                             ),
                                           );
                                         }),
@@ -488,11 +529,10 @@ class _HomeScreenState extends State<HomeScreen>
                                     fontSize: 16, color: Colors.white)),
                             const SizedBox(width: 10),
                             Switch(
-                              value: _isLiveLocationEnabled,
-                              onChanged: _toggleLiveLocation,
-                              activeColor: Colors.white,
-                              inactiveTrackColor: Colors.white54,
-                            ),
+                                value: _isLiveLocationEnabled,
+                                onChanged: _toggleLiveLocation,
+                                activeColor: Colors.white,
+                                inactiveTrackColor: Colors.white54),
                           ],
                         ),
                         const SizedBox(height: 20),
@@ -511,13 +551,9 @@ class _HomeScreenState extends State<HomeScreen>
                         ElevatedButton.icon(
                           onPressed: _showCallSelectionDialog,
                           icon: const Icon(Icons.phone, size: 28),
-                          label: const Text(
-                            'Call',
-                            style: TextStyle(
-                              fontSize: 30,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
+                          label: const Text('Call',
+                              style: TextStyle(
+                                  fontSize: 30, fontWeight: FontWeight.bold)),
                           style: ElevatedButton.styleFrom(
                             backgroundColor:
                                 const Color.fromARGB(255, 70, 220, 53),
@@ -526,8 +562,7 @@ class _HomeScreenState extends State<HomeScreen>
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 40, vertical: 20),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(45),
-                            ),
+                                borderRadius: BorderRadius.circular(45)),
                           ),
                         ),
                         const SizedBox(height: 20),
@@ -549,7 +584,6 @@ class _HomeScreenState extends State<HomeScreen>
                                     .snapshot
                                     .value as Map<dynamic, dynamic>?) ??
                                 {});
-
                             if (alerts.isEmpty) {
                               return Container(
                                 padding: const EdgeInsets.all(16),
@@ -558,28 +592,22 @@ class _HomeScreenState extends State<HomeScreen>
                                   borderRadius: BorderRadius.circular(12),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.black.withOpacity(0.1),
-                                      blurRadius: 6,
-                                      offset: const Offset(0, 2),
-                                    ),
+                                        color: Colors.black.withOpacity(0.1),
+                                        blurRadius: 6,
+                                        offset: const Offset(0, 2))
                                   ],
                                 ),
-                                child: const Text(
-                                  'No SOS alerts created yet.',
-                                  style: TextStyle(
-                                      fontSize: 14, color: Colors.white70),
-                                ),
+                                child: const Text('No SOS alerts created yet.',
+                                    style: TextStyle(
+                                        fontSize: 14, color: Colors.white70)),
                               );
                             }
-
                             return Column(
                               children: alerts.entries.map((entry) {
                                 final alertData = Map<String, dynamic>.from(
-                                    entry.value as Map<dynamic, dynamic>);
+                                    entry.value as Map);
                                 final userInfo = Map<String, dynamic>.from(
-                                    alertData['User Identification']
-                                        as Map<dynamic, dynamic>);
-
+                                    alertData['User Identification'] as Map);
                                 return Container(
                                   width: double.infinity,
                                   margin:
@@ -589,10 +617,9 @@ class _HomeScreenState extends State<HomeScreen>
                                     borderRadius: BorderRadius.circular(12),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: Colors.black.withOpacity(0.2),
-                                        blurRadius: 6,
-                                        offset: const Offset(0, 2),
-                                      ),
+                                          color: Colors.black.withOpacity(0.2),
+                                          blurRadius: 6,
+                                          offset: const Offset(0, 2))
                                     ],
                                   ),
                                   child: Padding(
@@ -617,43 +644,36 @@ class _HomeScreenState extends State<HomeScreen>
                                                       size: 18),
                                                   const SizedBox(width: 8),
                                                   Text(
-                                                    'EMERGENCY ALERT • ${alertData['Date of SoS']}',
-                                                    style: TextStyle(
-                                                      color: Colors.red[300],
-                                                      fontSize: 12,
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                    ),
-                                                  ),
+                                                      'EMERGENCY ALERT • ${alertData['Date of SoS']}',
+                                                      style: TextStyle(
+                                                          color:
+                                                              Colors.red[300],
+                                                          fontSize: 12,
+                                                          fontWeight:
+                                                              FontWeight.bold)),
                                                 ],
                                               ),
                                               const SizedBox(height: 8),
                                               Text(
-                                                userInfo['name'] ??
-                                                    'Unknown User',
-                                                style: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontSize: 16,
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                              ),
+                                                  userInfo['name'] ??
+                                                      'Unknown User',
+                                                  style: const TextStyle(
+                                                      color: Colors.white,
+                                                      fontSize: 16,
+                                                      fontWeight:
+                                                          FontWeight.bold)),
                                               const SizedBox(height: 4),
                                               Text(
-                                                'Time: ${DateFormat('HH:mm').format(DateTime.parse(alertData['Time of SoS']))}',
-                                                style: const TextStyle(
-                                                  fontSize: 14,
-                                                  color: Colors.white70,
-                                                ),
-                                              ),
+                                                  'Time: ${DateFormat('HH:mm').format(DateTime.parse(alertData['Time of SoS']))}',
+                                                  style: const TextStyle(
+                                                      fontSize: 14,
+                                                      color: Colors.white70)),
                                               const SizedBox(height: 4),
                                               Text(
-                                                'Location: ${alertData['location']?['latitude']?.toStringAsFixed(4)}, '
-                                                '${alertData['location']?['longitude']?.toStringAsFixed(4)}',
-                                                style: const TextStyle(
-                                                  fontSize: 14,
-                                                  color: Colors.white70,
-                                                ),
-                                              ),
+                                                  'Location: ${alertData['location']?['latitude']?.toStringAsFixed(4)}, ${alertData['location']?['longitude']?.toStringAsFixed(4)}',
+                                                  style: const TextStyle(
+                                                      fontSize: 14,
+                                                      color: Colors.white70)),
                                             ],
                                           ),
                                         ),
@@ -665,15 +685,13 @@ class _HomeScreenState extends State<HomeScreen>
                                           child: Container(
                                             padding: const EdgeInsets.all(6),
                                             decoration: BoxDecoration(
-                                              color:
-                                                  Colors.white.withOpacity(0.2),
-                                              shape: BoxShape.circle,
-                                            ),
+                                                color: Colors.white
+                                                    .withOpacity(0.2),
+                                                shape: BoxShape.circle),
                                             child: const Icon(
-                                              Icons.delete_outline_rounded,
-                                              color: Colors.white70,
-                                              size: 20,
-                                            ),
+                                                Icons.delete_outline_rounded,
+                                                color: Colors.white70,
+                                                size: 20),
                                           ),
                                         ),
                                       ],
