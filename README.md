@@ -1,16 +1,60 @@
-# param_mitra
+# 🚀 Param Mitra – AI-Powered Women’s Safety App
 
-A new Flutter project.
+## 📌 Overview
+**Param Mitra** is an AI-driven **women’s safety and emergency response app** designed to provide **instant SOS alerts, live location tracking, and real-time assistance** during distress situations. It leverages **TensorFlow, Gemini AI, Firebase, and Leaflet API** to enhance security and response time.
 
-## Getting Started
+## 🔥 Features
+✅ **One-Tap SOS** – Instantly notify emergency contacts with live location.
+✅ **AI-Powered Risk Detection** – Uses **TensorFlow & Gemini AI** to analyze threats.
+✅ **Real-Time GPS Tracking** – **Leaflet API** for safe route navigation.
+✅ **Multi-Trigger SOS Activation** – Shake, Power Button, or Voice Command.
+✅ **Cloud-Backed Audio/Video Recording** – Captures real-time evidence.
+✅ **Encrypted Data Storage** – Ensures user privacy and security.
 
-This project is a starting point for a Flutter application.
+## 🛠️ Tech Stack
+- **Frontend:** Flutter (Dart)
+- **Backend:** Firebase Firestore & Realtime Database
+- **AI:** TensorFlow, Gemini AI
+- **Maps & Navigation:** Leaflet API, Google Maps API
+- **Communication:** Twilio API (Emergency SMS & Calls)
 
-A few resources to get you started if this is your first Flutter project:
+## 🚀 Getting Started
+### 📌 Prerequisites
+- Flutter SDK Installed
+- Firebase Project Setup
+- API Keys for Google Maps, Leaflet, and Twilio
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+### 🔧 Installation
+```bash
+# Clone the repository
+git clone https://github.com/alekhakumarswain/Param-Mitra.git
+cd ParamMitra
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+# Install dependencies
+flutter pub get
+
+# Run the app
+flutter run
+```
+
+## 🛡️ Security & Privacy
+- **Data Encryption** for all stored user information.
+- **Secure Cloud Storage** for audio/video evidence.
+- **User Authentication** via Firebase Authentication.
+
+## 🎯 Future Enhancements
+- 🔹 Smartwatch Integration for Quick SOS Activation.
+- 🔹 AI-Powered Incident Prediction & Prevention.
+- 🔹 Offline SOS Mode for Low Connectivity Areas.
+
+## 🤝 Contribution
+Want to contribute? Feel free to submit **pull requests** or open an **issue**. Let's make safety accessible to everyone! 🚀
+
+## 📄 License
+This project is **open-source** under the [MIT License](LICENSE).
+
+## 🌟 Show Your Support
+If you found this useful, **⭐ Star this repo** and **share the project** to help spread safety! 💙
+
+---
+🚀 **Stay Safe, Stay Empowered – Param Mitra!**
