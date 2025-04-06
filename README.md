@@ -12,7 +12,7 @@
 ✅ **Encrypted Data Storage** – Ensures user privacy and security.
 
 ## 🛠️ Tech Stack
-- **Frontend:** Flutter (Dart)
+- **Frontend:** Flutter (Dart), Java, Kotlin, Swift
 - **Backend:** Firebase Firestore & Realtime Database
 - **AI:** TensorFlow, Gemini AI
 - **Maps & Navigation:** Leaflet API, Google Maps API
